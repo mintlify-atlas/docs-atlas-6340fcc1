@@ -1,0 +1,154 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Gnosis Prediction Market Agent",
+  "projectDescription": "AI agent framework for autonomous trading on prediction markets using multiple AI frameworks and betting strategies.",
+  "theme": "aspen",
+  "primaryColor": "#2E86AB",
+  "lightColor": "#A7C5D9",
+  "darkColor": "#1A4D6F",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/agents",
+              "concepts/markets",
+              "concepts/betting-strategies",
+              "concepts/trade-intervals"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-agents",
+              "guides/deploying-agents",
+              "guides/benchmarking",
+              "guides/hackathon"
+            ]
+          },
+          {
+            "group": "Agent Gallery",
+            "pages": [
+              "agents/overview",
+              "agents/simple-agents",
+              "agents/research-agents",
+              "agents/prophet-agents",
+              "agents/microchain-agents",
+              "agents/specialized-agents"
+            ]
+          },
+          {
+            "group": "Tools & Utilities",
+            "pages": [
+              "tools/web-scraping",
+              "tools/research",
+              "tools/database"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Classes",
+            "pages": [
+              "api/deployable-agent",
+              "api/agent-market",
+              "api/probabilistic-answer"
+            ]
+          },
+          {
+            "group": "Agent Implementations",
+            "pages": [
+              "api/agents/coinflip-agent",
+              "api/agents/advanced-agent",
+              "api/agents/prophet-agent",
+              "api/agents/microchain-agent",
+              "api/agents/think-thoroughly-agent"
+            ]
+          },
+          {
+            "group": "Markets",
+            "pages": [
+              "api/markets/omen",
+              "api/markets/manifold",
+              "api/markets/polymarket",
+              "api/markets/metaculus"
+            ]
+          },
+          {
+            "group": "Betting Strategies",
+            "pages": [
+              "api/betting/kelly-betting",
+              "api/betting/max-expected-value",
+              "api/betting/max-accuracy"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "api/tools/web-scraping",
+              "api/tools/search",
+              "api/tools/llm-utils"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Deployment Options",
+            "pages": [
+              "deployment/local",
+              "deployment/docker",
+              "deployment/cloud",
+              "deployment/environment"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "60+ pre-built prediction market trading agents",
+    "Support for Omen, Manifold, Polymarket, and Metaculus markets",
+    "Multiple AI frameworks (LangChain, CrewAI, Microchain, PydanticAI)",
+    "Advanced betting strategies (Kelly betting, expected value optimization)",
+    "Research tools with web scraping and Google search integration",
+    "Interactive Streamlit apps for agent testing",
+    "Production deployment ready with Docker and GKE support",
+    "Extensible agent base classes for custom implementations"
+  ],
+  "publicApiSurface": [
+    "DeployableTraderAgent",
+    "DeployableCoinFlipAgent",
+    "AdvancedAgent",
+    "DeployablePredictionProphetGPT4oAgent",
+    "DeployableMicrochainAgent",
+    "DeployableThinkThoroughlyAgent",
+    "AgentMarket",
+    "ProbabilisticAnswer",
+    "BettingStrategy",
+    "KellyBettingStrategy",
+    "run_agent.py CLI",
+    "agent_app.py Streamlit interface",
+    "OmenAgentMarket",
+    "ManifoldAgentMarket",
+    "PolymarketAgentMarket",
+    "MetaculusAgentMarket"
+  ]
+}
