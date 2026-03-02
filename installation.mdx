@@ -1,0 +1,141 @@
+---
+title: Installation
+description: Install Gnosis Prediction Market Agent using Poetry and Python 3.11+
+---
+
+## Prerequisites
+
+Before installing, ensure you have:
+
+- **Python 3.11 or higher** - The project requires Python ~3.11.0
+- **pip** - Python package installer
+- **Git** - For cloning the repository
+
+<Note>
+  The project uses Poetry for dependency management, which provides reproducible builds and better dependency resolution than pip alone.
+</Note>
+
+## Installation steps
+
+<Steps>
+  <Step title="Clone the repository">
+    First, clone the Gnosis Prediction Market Agent repository:
+
+    ```bash
+    git clone https://github.com/gnosis/prediction-market-agent.git
+    cd prediction-market-agent
+    ```
+  </Step>
+
+  <Step title="Install Poetry">
+    Install Poetry using Python 3.11's pip:
+
+    ```bash
+    python3.11 -m pip install poetry
+    ```
+
+    <Note>
+      If `python3.11` is not found, you may need to install Python 3.11 first using your system's package manager or from [python.org](https://www.python.org/downloads/).
+    </Note>
+  </Step>
+
+  <Step title="Install project dependencies">
+    Use Poetry to install all project dependencies:
+
+    ```bash
+    python3.11 -m poetry install
+    ```
+
+    This will:
+    - Create a virtual environment
+    - Install all required dependencies from `pyproject.toml`
+    - Set up the project for development
+
+    <Warning>
+      The installation may take several minutes as the project has many dependencies including LangChain, OpenAI, web3, and various AI frameworks.
+    </Warning>
+  </Step>
+
+  <Step title="Activate the Poetry shell">
+    Activate the Poetry-managed virtual environment:
+
+    ```bash
+    python3.11 -m poetry shell
+    ```
+
+    You should see your terminal prompt change to indicate you're in the Poetry environment.
+  </Step>
+
+  <Step title="Verify installation">
+    Verify the installation by checking the available commands:
+
+    ```bash
+    python prediction_market_agent/run_agent.py --help
+    ```
+
+    You should see the help output with available agents and market types.
+  </Step>
+</Steps>
+
+## Key dependencies
+
+The project includes these major dependencies:
+
+<AccordionGroup>
+  <Accordion title="AI and LLM frameworks">
+    - **OpenAI** (^1.91.0) - GPT models for agent reasoning
+    - **LangChain** (^1.0.0) - Framework for building LLM applications
+    - **CrewAI** (^1.0.0) - Multi-agent orchestration
+    - **Pydantic AI** (^1.0.0) - Type-safe AI applications
+    - **Autogen** (^0.4.0) - Multi-agent conversations
+  </Accordion>
+
+  <Accordion title="Prediction market tooling">
+    - **prediction-market-agent-tooling** (^0.69.24) - Core APIs for interacting with prediction markets
+    - **prediction-prophet** - Forecasting and research tools
+    - **web3** (version 6-8) - Ethereum blockchain interaction
+  </Accordion>
+
+  <Accordion title="Web scraping and search">
+    - **Tavily Python** (^0.5.0) - Web search capabilities
+    - **BeautifulSoup4** (version 4.x) - HTML parsing
+    - **DuckDuckGo Search** - Privacy-focused search
+    - **Google Search Results** - Google search integration
+  </Accordion>
+
+  <Accordion title="Development tools">
+    - **Streamlit** (1.49.1) - Interactive web apps
+    - **Typer** (0.9.x) - CLI framework
+    - **pytest** - Testing framework
+    - **mypy** (^1.8.0) - Static type checking
+    - **black** (^23.12.1) - Code formatting
+  </Accordion>
+</AccordionGroup>
+
+## Development dependencies
+
+If you're contributing to the project, Poetry will also install development dependencies including:
+
+- **Jupyter** and **JupyterLab** - For notebook-based development
+- **ape-foundry** - Local blockchain testing
+- **freezegun** - Time mocking for tests
+- **matplotlib** and **seaborn** - Data visualization
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Set up your environment variables and API keys
+  </Card>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Run your first agent with the coinflip example
+  </Card>
+</CardGroup>

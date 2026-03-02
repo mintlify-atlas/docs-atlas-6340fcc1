@@ -1,0 +1,401 @@
+---
+title: 'Web Scraping API'
+description: 'API reference for web scraping functions and tools'
+icon: 'globe'
+---
+
+## Overview
+
+The web scraping module provides multiple functions for extracting content from URLs with different levels of processing. All functions are located in `prediction_market_agent.tools.web_scrape`.
+
+## Functions
+
+### web_scrape (Markdown)
+
+Extracts web content and converts it to clean markdown format with automatic caching and retry logic.
+
+**Location:** `prediction_market_agent.tools.web_scrape.markdown`
+
+<ParamField path="url" type="str" required>
+  The URL to scrape
+</ParamField>
+
+<ParamField path="timeout" type="int" default="10">
+  Request timeout in seconds
+</ParamField>
+
+<ResponseField name="return" type="str | None">
+  Markdown-formatted text content, or `None` if the request fails or content is non-HTML
+</ResponseField>
+
+**Features:**
+- Cached for 1 day using `@db_cache` decorator
+- Automatic retry with 3 attempts and 1-second delays
+- Removes scripts, styles, images, and non-content elements
+- User-agent spoofing to avoid bot detection
+- Returns `None` for non-HTML content
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+
+markdown_content = web_scrape(
+    url="https://example.com/article",
+    timeout=10
+)
+
+if markdown_content:
+    print(f"Scraped {len(markdown_content)} characters")
+```
+
+```python Agent Example
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+
+# Search and scrape top results
+google_results = search_google_serper("prediction markets")
+contents = [
+    scraped[:10000]
+    for url in google_results[:5]
+    if (scraped := web_scrape(url))
+]
+```
+</CodeGroup>
+
+<Accordion title="Implementation Details">
+  The function uses `tenacity` for retry logic and `markdownify` for HTML-to-markdown conversion:
+
+  ```python
+  @tenacity.retry(
+      stop=tenacity.stop_after_attempt(3),
+      wait=tenacity.wait_fixed(1),
+      reraise=True
+  )
+  def fetch_html(url: str, timeout: int) -> Response:
+      headers = {
+          "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:107.0) Gecko/20100101 Firefox/107.0"
+      }
+      response = requests.get(url, headers=headers, timeout=timeout)
+      return response
+  ```
+
+  Elements removed during scraping:
+  - `<script>`, `<style>`, `<noscript>` tags
+  - `<link>`, `<head>` sections
+  - `<image>` and `<img>` tags
+</Accordion>
+
+---
+
+### web_scrape (Basic Summary)
+
+Scrapes a URL and automatically summarizes content exceeding 10,000 characters using LLM.
+
+**Location:** `prediction_market_agent.tools.web_scrape.basic_summary`
+
+<ParamField path="objective" type="str" required>
+  The objective that defines what content to extract and summarize
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  The URL of the website to scrape
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Extracted text content, summarized if longer than 10,000 characters
+</ResponseField>
+
+**Summary Process:**
+- Uses LangChain's `load_summarize_chain` with map-reduce strategy
+- Splits text into 10,000 character chunks with 500 character overlap
+- Employs OpenAI's GPT model (configurable via `DEFAULT_OPENAI_MODEL`)
+- Temperature set to 0 for consistent results
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent.tools.web_scrape.basic_summary import web_scrape
+
+result = web_scrape(
+    objective="Extract information about prediction markets",
+    url="https://example.com/long-article"
+)
+```
+
+```python Function Tool
+from prediction_market_agent.tools.web_scrape.basic_summary import (
+    WebScrapingTool
+)
+
+tool = WebScrapingTool()
+result = tool.fn(
+    objective="Analyze market trends",
+    url="https://example.com"
+)
+```
+</CodeGroup>
+
+<Note>
+  The summary function uses the `DEFAULT_OPENAI_MODEL` from `prediction_market_agent.utils` and requires `OPENAI_API_KEY` to be set in the environment.
+</Note>
+
+---
+
+### web_scrape_structured
+
+Scrapes content while preserving HTML structure and hierarchy.
+
+**Location:** `prediction_market_agent.tools.web_scrape.structured_summary`
+
+<ParamField path="url" type="str" required>
+  The URL to scrape (automatically prefixes with `https://` if protocol is missing)
+</ParamField>
+
+<ParamField path="remove_a_links" type="bool" default="True">
+  Whether to remove anchor tags from the output
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Structured text content with preserved hierarchy
+</ResponseField>
+
+**Output Format:**
+
+Unlike plain text scrapers, this preserves hierarchical structure ideal for tables and nested content:
+
+```
+A Historical look at Gnosis, GNO's price
+    GNO/USD Pair
+        GNO
+        USD
+        16 January 2021
+        106.76
+        GNO
+        USD
+        16 January 2022
+        398.11
+```
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent.tools.web_scrape.structured_summary import (
+    web_scrape_structured
+)
+
+structured_content = web_scrape_structured(
+    url="https://example.com/data-page",
+    remove_a_links=True
+)
+```
+
+```python With Summarization
+from prediction_market_agent.tools.web_scrape.structured_summary import (
+    web_scrape_structured_and_summarized
+)
+
+summary = web_scrape_structured_and_summarized(
+    objective="Extract price data",
+    url="https://example.com/data-page",
+    remove_a_links=True
+)
+```
+</CodeGroup>
+
+---
+
+### web_scrape_structured_and_summarized
+
+Combines structured scraping with LLM-based summarization.
+
+**Location:** `prediction_market_agent.tools.web_scrape.structured_summary`
+
+<ParamField path="objective" type="str" required>
+  The objective defining what information to extract
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  The URL to scrape
+</ParamField>
+
+<ParamField path="remove_a_links" type="bool" default="True">
+  Whether to remove anchor tags
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Summarized structured content focused on the objective
+</ResponseField>
+
+---
+
+## WebScrapingTool Class
+
+Function calling tool for microchain agents and LLM function calling.
+
+**Location:** `prediction_market_agent.tools.web_scrape.basic_summary`
+
+### Schema
+
+```python
+web_scraping_schema = {
+    "type": "function",
+    "function": {
+        "name": "web_scraping",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "objective": {
+                    "type": "string",
+                    "description": "The objective that defines the content to be scraped from the website.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the website to be scraped.",
+                },
+            },
+            "required": ["query"],
+        },
+        "description": "Web scrape a URL to retrieve information relevant to the objective.",
+    },
+}
+```
+
+### Usage
+
+```python
+from prediction_market_agent.tools.web_scrape.basic_summary import WebScrapingTool
+
+tool = WebScrapingTool()
+result = tool.fn(objective="...", url="...")
+schema = tool.schema
+```
+
+---
+
+## Helper Functions
+
+### fetch_html
+
+**Location:** `prediction_market_agent.tools.web_scrape.markdown`
+
+Internal helper with automatic retry logic.
+
+<ParamField path="url" type="str" required>
+  URL to fetch
+</ParamField>
+
+<ParamField path="timeout" type="int" required>
+  Request timeout in seconds
+</ParamField>
+
+<ResponseField name="return" type="Response">
+  HTTP response object from `requests` library
+</ResponseField>
+
+---
+
+### clean_soup
+
+**Location:** `prediction_market_agent.tools.web_scrape.structured_summary`
+
+Cleans BeautifulSoup Tag objects for structured extraction.
+
+<ParamField path="soup" type="Tag" required>
+  BeautifulSoup Tag object to clean
+</ParamField>
+
+<ParamField path="remove_a_links" type="bool" required>
+  Whether to remove anchor elements
+</ParamField>
+
+<ResponseField name="return" type="Tag">
+  Cleaned Tag object
+</ResponseField>
+
+**Cleaning operations:**
+- Removes all attributes except `href`
+- Removes `noscript`, `script`, `style` tags
+- Optionally removes anchor tags
+- Removes HTML comments
+- Removes empty elements
+
+---
+
+## Error Handling
+
+<Warning>
+  All scraping functions can raise:
+  - `requests.RequestException` - Network or HTTP errors
+  - `requests.Timeout` - Request timeout exceeded
+  - `requests.HTTPError` - HTTP error responses (404, 403, etc.)
+</Warning>
+
+### Exception Handler
+
+Use the tool exception handler for graceful error handling:
+
+```python
+from prediction_market_agent.tools.tool_exception_handler import tool_exception_handler
+import requests
+
+web_scrape_safe = tool_exception_handler(
+    map_exception_to_output={
+        requests.exceptions.HTTPError: "Couldn't reach the URL.",
+        requests.exceptions.Timeout: "Request timed out.",
+    }
+)(web_scrape_structured)
+
+result = web_scrape_safe(url="https://example.com")
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+<ParamField path="OPENAI_API_KEY" type="str" required>
+  Required for summarization features in `basic_summary` and `structured_summary` modules
+</ParamField>
+
+### Database Cache
+
+The markdown scraper uses `@db_cache` which requires:
+
+<ParamField path="SQLALCHEMY_DB_URL" type="str">
+  Database URL for caching (optional, uses in-memory cache if not set)
+</ParamField>
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Choose the Right Tool" icon="crosshairs">
+    - Use **markdown** scraper for general content
+    - Use **basic_summary** for long articles
+    - Use **structured** for tables and hierarchical data
+  </Card>
+  
+  <Card title="Handle Errors Gracefully" icon="shield">
+    Always wrap scraping calls with error handlers or use `tool_exception_handler`
+  </Card>
+  
+  <Card title="Respect Timeouts" icon="clock">
+    Set appropriate timeouts based on expected page load times (default: 10s)
+  </Card>
+  
+  <Card title="Cache Results" icon="database">
+    Use the markdown scraper's built-in caching or implement your own for custom scrapers
+  </Card>
+</CardGroup>
+
+## Dependencies
+
+```bash
+pip install requests beautifulsoup4 markdownify tenacity langchain langchain-openai
+```
+
+## See Also
+
+- [Search Tools API](/api/tools/search) - For finding URLs to scrape
+- [LLM Utils API](/api/tools/llm-utils) - For processing scraped content
+- [Web Scraping Guide](/tools/web-scraping) - Detailed usage guide and examples

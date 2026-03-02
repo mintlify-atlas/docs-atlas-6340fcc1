@@ -1,0 +1,482 @@
+---
+title: ProbabilisticAnswer
+description: Data models for representing predictions with probabilities, confidence levels, and reasoning for binary, categorical, and scalar markets
+---
+
+## Overview
+
+The `ProbabilisticAnswer` family of classes represents predictions returned from agent analysis methods. They encapsulate probability estimates, confidence levels, and reasoning for different market types.
+
+## Import
+
+```python
+from prediction_market_agent_tooling.markets.data_models import (
+    ProbabilisticAnswer,
+    CategoricalProbabilisticAnswer,
+    ScalarProbabilisticAnswer
+)
+```
+
+## ProbabilisticAnswer
+
+Used for binary (yes/no) market predictions.
+
+### Constructor
+
+```python
+ProbabilisticAnswer(
+    p_yes: Probability,
+    confidence: float,
+    reasoning: str | None = None
+)
+```
+
+<ParamField path="p_yes" type="Probability" required>
+  Probability that the outcome is "Yes" (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="confidence" type="float" required>
+  Confidence in the prediction (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="reasoning" type="str | None" default="None">
+  Optional explanation for the prediction
+</ParamField>
+
+### Properties
+
+<ResponseField name="p_yes" type="Probability">
+  Probability of "Yes" outcome
+</ResponseField>
+
+<ResponseField name="p_no" type="Probability">
+  Probability of "No" outcome (computed as 1 - p_yes)
+</ResponseField>
+
+<ResponseField name="confidence" type="float">
+  Confidence level in the prediction
+</ResponseField>
+
+<ResponseField name="reasoning" type="str | None">
+  Explanation for the prediction
+</ResponseField>
+
+### Basic Usage
+
+```python
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import Probability
+
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    # Run your analysis
+    analysis = analyze_question(market.question)
+    
+    return ProbabilisticAnswer(
+        p_yes=Probability(0.65),
+        confidence=0.8,
+        reasoning="Based on recent news and historical trends"
+    )
+```
+
+### Accessing Probabilities
+
+```python
+answer = ProbabilisticAnswer(
+    p_yes=Probability(0.65),
+    confidence=0.8,
+    reasoning="Market analysis suggests positive outcome"
+)
+
+print(f"Yes probability: {answer.p_yes:.2%}")  # 65.00%
+print(f"No probability: {answer.p_no:.2%}")    # 35.00%
+print(f"Confidence: {answer.confidence:.1%}")  # 80.0%
+print(f"Reasoning: {answer.reasoning}")
+```
+
+### From Agent Implementation
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import Probability
+import random
+
+class CoinFlipAgent(DeployableTraderAgent):
+    def answer_binary_market(
+        self, 
+        market: AgentMarket
+    ) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        
+        return ProbabilisticAnswer(
+            p_yes=Probability(float(decision)),
+            confidence=0.5,
+            reasoning="I flipped a coin to decide."
+        )
+```
+
+## CategoricalProbabilisticAnswer
+
+Used for categorical (multiple choice) market predictions.
+
+### Constructor
+
+```python
+CategoricalProbabilisticAnswer(
+    probabilities: dict[str, Probability],
+    confidence: float | None = None,
+    reasoning: str | None = None
+)
+```
+
+<ParamField path="probabilities" type="dict[str, Probability]" required>
+  Probability for each outcome (must sum to 1.0)
+</ParamField>
+
+<ParamField path="confidence" type="float | None" default="None">
+  Overall confidence in the prediction
+</ParamField>
+
+<ParamField path="reasoning" type="str | None" default="None">
+  Optional explanation for the prediction
+</ParamField>
+
+### Properties
+
+<ResponseField name="probabilities" type="dict[str, Probability]">
+  Dictionary mapping outcome names to their probabilities
+</ResponseField>
+
+<ResponseField name="confidence" type="float | None">
+  Confidence level in the prediction
+</ResponseField>
+
+<ResponseField name="reasoning" type="str | None">
+  Explanation for the prediction
+</ResponseField>
+
+### Basic Usage
+
+```python
+from prediction_market_agent_tooling.markets.data_models import (
+    CategoricalProbabilisticAnswer
+)
+from prediction_market_agent_tooling.gtypes import Probability
+
+def answer_categorical_market(
+    self, 
+    market: AgentMarket
+) -> CategoricalProbabilisticAnswer | None:
+    # Analyze each outcome
+    return CategoricalProbabilisticAnswer(
+        probabilities={
+            "Option A": Probability(0.45),
+            "Option B": Probability(0.35),
+            "Option C": Probability(0.20)
+        },
+        confidence=0.75,
+        reasoning="Based on poll data and expert analysis"
+    )
+```
+
+### From Agent Implementation
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import (
+    CategoricalProbabilisticAnswer
+)
+from prediction_prophet.benchmark.agents import PredictionProphetAgent
+
+class CategoricalAgent(DeployableTraderAgent):
+    agent: PredictionProphetAgent
+    bet_on_n_markets_per_run = 2
+    
+    def answer_categorical_market(
+        self, 
+        market: AgentMarket
+    ) -> CategoricalProbabilisticAnswer | None:
+        prediction = self.agent.predict_categorical(
+            market.question, 
+            market.outcomes
+        )
+        
+        logger.info(
+            f"Answering '{market.question}' with '{prediction.outcome_prediction}'."
+        )
+        
+        return prediction.outcome_prediction
+```
+
+### Converting from Binary
+
+Convert a binary prediction to categorical format:
+
+```python
+from prediction_market_agent_tooling.markets.data_models import (
+    CategoricalProbabilisticAnswer,
+    ProbabilisticAnswer
+)
+from prediction_market_agent_tooling.gtypes import Probability
+
+binary_answer = ProbabilisticAnswer(
+    p_yes=Probability(0.65),
+    confidence=0.8,
+    reasoning="Analysis complete"
+)
+
+categorical_answer = CategoricalProbabilisticAnswer.from_probabilistic_answer(
+    binary_answer
+)
+
+# Result:
+# probabilities = {"Yes": Probability(0.65), "No": Probability(0.35)}
+# confidence = 0.8
+# reasoning = "Analysis complete"
+```
+
+## ScalarProbabilisticAnswer
+
+Used for scalar (numeric range) market predictions.
+
+### Constructor
+
+```python
+ScalarProbabilisticAnswer(
+    value: float,
+    confidence: float | None = None,
+    reasoning: str | None = None
+)
+```
+
+<ParamField path="value" type="float" required>
+  Predicted value within the market's range
+</ParamField>
+
+<ParamField path="confidence" type="float | None" default="None">
+  Confidence in the prediction
+</ParamField>
+
+<ParamField path="reasoning" type="str | None" default="None">
+  Optional explanation for the prediction
+</ParamField>
+
+### Properties
+
+<ResponseField name="value" type="float">
+  The predicted numeric value
+</ResponseField>
+
+<ResponseField name="confidence" type="float | None">
+  Confidence level in the prediction
+</ResponseField>
+
+<ResponseField name="reasoning" type="str | None">
+  Explanation for the prediction
+</ResponseField>
+
+### Basic Usage
+
+```python
+from prediction_market_agent_tooling.markets.data_models import (
+    ScalarProbabilisticAnswer
+)
+
+def answer_scalar_market(
+    self, 
+    market: AgentMarket
+) -> ScalarProbabilisticAnswer | None:
+    if market.upper_bound is None or market.lower_bound is None:
+        raise ValueError("Market upper and lower bounds must be set")
+    
+    # Your prediction logic
+    predicted_value = calculate_prediction(
+        market.question,
+        market.lower_bound,
+        market.upper_bound
+    )
+    
+    return ScalarProbabilisticAnswer(
+        value=predicted_value,
+        confidence=0.7,
+        reasoning="Based on statistical model and historical data"
+    )
+```
+
+### From Agent Implementation
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import (
+    ScalarProbabilisticAnswer
+)
+from prediction_prophet.benchmark.agents import PredictionProphetAgent
+
+class ScalarAgent(DeployableTraderAgent):
+    agent: PredictionProphetAgent
+    bet_on_n_markets_per_run = 2
+    
+    def answer_scalar_market(
+        self, 
+        market: AgentMarket
+    ) -> ScalarProbabilisticAnswer | None:
+        if market.upper_bound is None or market.lower_bound is None:
+            raise ValueError("Market upper and lower bounds must be set")
+        
+        prediction = self.agent.predict_scalar(
+            market.question,
+            market.upper_bound,
+            market.lower_bound
+        )
+        
+        logger.info(
+            f"Answering '{market.question}' with '{prediction.outcome_prediction}'."
+        )
+        
+        return prediction.outcome_prediction
+```
+
+## Returning None
+
+All answer methods can return `None` to skip a market:
+
+```python
+def answer_binary_market(
+    self, 
+    market: AgentMarket
+) -> ProbabilisticAnswer | None:
+    # Run analysis
+    result = analyze_market(market)
+    
+    # Skip if we can't make a confident prediction
+    if result.confidence < 0.6:
+        logger.info(f"Low confidence for {market.url}, skipping")
+        return None
+    
+    # Skip if no data available
+    if result.data_points < 5:
+        logger.info(f"Insufficient data for {market.url}, skipping")
+        return None
+    
+    return ProbabilisticAnswer(
+        p_yes=result.probability,
+        confidence=result.confidence,
+        reasoning=result.reasoning
+    )
+```
+
+## Probability Type
+
+The `Probability` type ensures values are between 0.0 and 1.0:
+
+```python
+from prediction_market_agent_tooling.gtypes import Probability
+
+# Valid probabilities
+p1 = Probability(0.0)    # 0%
+p2 = Probability(0.5)    # 50%
+p3 = Probability(1.0)    # 100%
+p4 = Probability(0.65)   # 65%
+
+# Use in calculations
+if p4 > 0.5:
+    print("More likely than not")
+
+# Format for display
+print(f"Probability: {p4:.2%}")  # "Probability: 65.00%"
+```
+
+## Complete Example
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import (
+    ProbabilisticAnswer,
+    CategoricalProbabilisticAnswer,
+    ScalarProbabilisticAnswer
+)
+from prediction_market_agent_tooling.gtypes import Probability
+from prediction_market_agent_tooling.loggers import logger
+
+class MultiTypeAgent(DeployableTraderAgent):
+    def answer_binary_market(
+        self, 
+        market: AgentMarket
+    ) -> ProbabilisticAnswer | None:
+        """Handle binary markets"""
+        result = self.analyze_binary(market.question)
+        
+        if result is None:
+            return None
+        
+        return ProbabilisticAnswer(
+            p_yes=Probability(result.probability),
+            confidence=result.confidence,
+            reasoning=result.explanation
+        )
+    
+    def answer_categorical_market(
+        self, 
+        market: AgentMarket
+    ) -> CategoricalProbabilisticAnswer | None:
+        """Handle categorical markets"""
+        result = self.analyze_categorical(
+            market.question, 
+            market.outcomes
+        )
+        
+        if result is None:
+            return None
+        
+        # Ensure probabilities sum to 1.0
+        probs = {}
+        total = sum(result.probabilities.values())
+        for outcome, prob in result.probabilities.items():
+            probs[outcome] = Probability(prob / total)
+        
+        return CategoricalProbabilisticAnswer(
+            probabilities=probs,
+            confidence=result.confidence,
+            reasoning=result.explanation
+        )
+    
+    def answer_scalar_market(
+        self, 
+        market: AgentMarket
+    ) -> ScalarProbabilisticAnswer | None:
+        """Handle scalar markets"""
+        if market.upper_bound is None or market.lower_bound is None:
+            logger.warning(f"Scalar market missing bounds: {market.url}")
+            return None
+        
+        result = self.analyze_scalar(
+            market.question,
+            market.lower_bound,
+            market.upper_bound
+        )
+        
+        if result is None:
+            return None
+        
+        # Clamp value to market bounds
+        value = max(
+            market.lower_bound,
+            min(result.value, market.upper_bound)
+        )
+        
+        return ScalarProbabilisticAnswer(
+            value=value,
+            confidence=result.confidence,
+            reasoning=result.explanation
+        )
+```
+
+## See Also
+
+- [DeployableTraderAgent](/api/deployable-agent) - Base class using these models
+- [AgentMarket](/api/agent-market) - Market interface for predictions
+- [Betting Strategies](/guides/betting-strategies) - How predictions are converted to bets

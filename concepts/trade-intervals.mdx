@@ -1,0 +1,481 @@
+---
+title: "Trade Intervals"
+description: "Control how frequently your agent trades on the same market to optimize capital efficiency and avoid overtrading"
+---
+
+## Overview
+
+Trade intervals determine how often your agent can place bets on the same market. This prevents overtrading, manages capital efficiently, and respects market dynamics.
+
+<Info>
+  Without trade intervals, an agent might continuously bet on the same market every time it runs, wasting gas fees and potentially moving the price against itself.
+</Info>
+
+## Why Trade Intervals Matter
+
+<CardGroup cols={2}>
+  <Card title="Capital Efficiency" icon="coins">
+    Avoid locking too much capital in the same market
+  </Card>
+  <Card title="Gas Optimization" icon="gas-pump">
+    Reduce unnecessary transaction costs
+  </Card>
+  <Card title="Price Impact" icon="chart-line">
+    Give markets time to incorporate new information
+  </Card>
+  <Card title="Risk Management" icon="shield">
+    Prevent over-concentration in single markets
+  </Card>
+</CardGroup>
+
+## Available Interval Types
+
+The framework provides two main types of trade intervals:
+
+### FixedInterval
+
+Wait a fixed amount of time before trading on the same market again.
+
+```python
+from datetime import timedelta
+from prediction_market_agent_tooling.deploy.trade_interval import (
+    FixedInterval,
+    TradeInterval,
+)
+
+class MyAgent(DeployableTraderAgent):
+    same_market_trade_interval: TradeInterval = FixedInterval(timedelta(days=7))
+```
+
+<ParamField path="interval" type="timedelta" required>
+  Time to wait before trading the same market again
+</ParamField>
+
+### MarketLifetimeProportionalInterval
+
+Trade multiple times based on market lifetime, spacing trades proportionally.
+
+```python
+from prediction_market_agent_tooling.deploy.trade_interval import (
+    MarketLifetimeProportionalInterval,
+)
+
+class MyAgent(DeployableTraderAgent):
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+```
+
+<ParamField path="max_trades" type="int" required>
+  Maximum number of trades to place over the market's lifetime
+</ParamField>
+
+<Info>
+  If a market runs for 28 days and `max_trades=4`, the agent will trade roughly every 7 days (28/4).
+</Info>
+
+## Common Patterns
+
+### One-Time Trading
+
+Never trade on the same market twice:
+
+```python
+from datetime import timedelta
+
+class OneTimeBettingAgent(DeployableTraderAgent):
+    # Set interval longer than any market's lifetime
+    same_market_trade_interval = FixedInterval(timedelta(days=1995))
+```
+
+<Tip>
+  This pattern is useful for:
+  - Agents that target initial mispricings
+  - Strategies that bet on market creation
+  - Capital-constrained agents that need to diversify
+</Tip>
+
+**Example from SkewAgent:**
+
+```python
+class SkewAgent(DeployableTraderAgent):
+    # Bet on many markets, but never the same one twice
+    bet_on_n_markets_per_run = 1000
+    same_market_trade_interval = FixedInterval(timedelta(days=1995))
+    get_markets_sort_by = SortBy.NEWEST  # Target fresh markets at 50/50
+```
+
+### Weekly Rebalancing
+
+Trade on markets once per week:
+
+```python
+class WeeklyRebalancingAgent(DeployableTraderAgent):
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+**Use cases:**
+- Markets with evolving information
+- Long-running markets (>1 month)
+- Rebalancing based on new data
+
+**Example from GPTRHighestLiquidityAgent:**
+
+```python
+class GPTRHighestLiquidityAgent(GPTRAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+### Bi-Weekly Updates
+
+Trade every two weeks:
+
+```python
+class BiWeeklyAgent(DeployableTraderAgent):
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+```
+
+**Example from DeployableCoinFlipAgentByHighestLiquidity:**
+
+```python
+class DeployableCoinFlipAgentByHighestLiquidity(DeployableCoinFlipAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+```
+
+### Proportional to Market Lifetime
+
+Trade multiple times, spaced evenly across market's life:
+
+```python
+class ProportionalTradingAgent(DeployableTraderAgent):
+    # Trade up to 4 times per market, evenly spaced
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+```
+
+**How it works:**
+- Market open for 8 days → trade every ~2 days
+- Market open for 40 days → trade every ~10 days
+- Market open for 365 days → trade every ~91 days
+
+**Example from prophet agents:**
+
+```python
+class DeployableTraderAgentER(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+```
+
+<Tip>
+  Proportional intervals are ideal for agents that want to:
+  - Update positions as markets evolve
+  - Balance frequent updates with capital efficiency
+  - Adapt to both short and long-term markets
+</Tip>
+
+## Choosing the Right Interval
+
+<AccordionGroup>
+  <Accordion title="High-Frequency (< 1 day)">
+    **When to use:**
+    - Markets with rapidly changing information
+    - Scalping strategies
+    - Arbitrage opportunities
+    
+    **Example:**
+    ```python
+    same_market_trade_interval = FixedInterval(timedelta(hours=6))
+    ```
+    
+    **Risks:**
+    - High gas costs
+    - Price impact from frequent trading
+    - Capital concentration
+  </Accordion>
+  
+  <Accordion title="Weekly (7 days)">
+    **When to use:**
+    - General-purpose trading
+    - Markets with moderate information flow
+    - Balanced approach
+    
+    **Example:**
+    ```python
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+    ```
+    
+    **Best for:**
+    - Most production agents
+    - Good balance of updates vs. costs
+    - Standard rebalancing frequency
+  </Accordion>
+  
+  <Accordion title="Bi-Weekly (14 days)">
+    **When to use:**
+    - Long-term markets
+    - Lower-frequency strategies
+    - Capital preservation
+    
+    **Example:**
+    ```python
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+    ```
+    
+    **Best for:**
+    - Conservative agents
+    - High-liquidity focus
+    - Cost-conscious strategies
+  </Accordion>
+  
+  <Accordion title="One-Time (never repeat)">
+    **When to use:**
+    - Initial mispricing capture
+    - Maximum diversification
+    - Capital-constrained agents
+    
+    **Example:**
+    ```python
+    same_market_trade_interval = FixedInterval(timedelta(days=1995))
+    ```
+    
+    **Best for:**
+    - New market strategies
+    - Wide market coverage
+    - Minimal gas usage
+  </Accordion>
+  
+  <Accordion title="Proportional (Market Lifetime)">
+    **When to use:**
+    - Mixed market durations
+    - Adaptive update frequency
+    - Long-term position management
+    
+    **Example:**
+    ```python
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+    ```
+    
+    **Best for:**
+    - Markets of varying durations
+    - Balanced update strategy
+    - Dynamic rebalancing
+  </Accordion>
+</AccordionGroup>
+
+## Combining Intervals with Other Settings
+
+### High Volume, One-Time Trading
+
+```python
+class HighVolumeAgent(DeployableTraderAgent):
+    """Trade on many markets once each"""
+    bet_on_n_markets_per_run = 1000
+    same_market_trade_interval = FixedInterval(timedelta(days=1995))
+    get_markets_sort_by = SortBy.NEWEST
+```
+
+### Focused, Frequent Updates
+
+```python
+class FocusedAgent(DeployableTraderAgent):
+    """Trade on few markets but update frequently"""
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+```
+
+### Adaptive to Market Duration
+
+```python
+class AdaptiveAgent(DeployableTraderAgent):
+    """Scale updates based on market lifetime"""
+    bet_on_n_markets_per_run = 4
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+```
+
+## Real-World Examples
+
+### Example 1: Market Creator Stalker
+
+Targets specific market creators with moderate update frequency:
+
+```python
+class MarketCreatorsStalkerAgent(DeployableTraderAgent):
+    # Trade on all available markets from whitelisted creators
+    bet_on_n_markets_per_run = MAX_AVAILABLE_MARKETS
+    
+    # But only update positions every 14 days
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+    
+    def get_markets(self, market_type: MarketType) -> Sequence[AgentMarket]:
+        return [
+            OmenAgentMarket.from_data_model(m)
+            for m in OmenSubgraphHandler().get_omen_markets_simple(
+                limit=self.n_markets_to_fetch,
+                creator_in=SPECIALIZED_FOR_MARKET_CREATORS,
+            )
+        ]
+```
+
+### Example 2: GPT Researcher Agent
+
+High-quality research with weekly rebalancing:
+
+```python
+class GPTRAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 4
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Expensive: runs GPT Researcher
+        report = gptr_research_sync(market.question)
+        prediction = prophet_make_prediction(
+            market_question=market.question,
+            additional_information=report,
+        )
+        return prediction
+
+class GPTRHighestLiquidityAgent(GPTRAgent):
+    # Focus on fewer markets, update weekly
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+### Example 3: Statistical Skew Agent
+
+Maximize coverage, never repeat:
+
+```python
+class SkewAgent(DeployableTraderAgent):
+    supported_markets = [MarketType.OMEN]
+    
+    # Process as many markets as possible
+    n_markets_to_fetch = 1000
+    bet_on_n_markets_per_run = 1000
+    
+    # Never re-bet (simple statistical strategy)
+    same_market_trade_interval = FixedInterval(timedelta(days=1995))
+    
+    # Target new markets at 50/50 starting prices
+    get_markets_sort_by = SortBy.NEWEST
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Simple statistical bet based on historical majority
+        return ProbabilisticAnswer(
+            p_yes=Probability(float(self.majority_resolution)),
+            confidence=1.0,
+            reasoning="Chosen based on majority resolution in recent history.",
+        )
+```
+
+## Advanced: Custom Interval Logic
+
+For complex scenarios, override interval checking:
+
+```python
+from prediction_market_agent_tooling.tools.utils import utcnow
+
+class CustomIntervalAgent(DeployableTraderAgent):
+    def should_trade_on_market(
+        self,
+        market: AgentMarket,
+        last_trade_time: DatetimeUTC | None,
+    ) -> bool:
+        if last_trade_time is None:
+            return True  # First trade
+        
+        # Custom logic: trade more frequently on high-volume markets
+        if market.volume > 10000:
+            min_interval = timedelta(days=3)
+        else:
+            min_interval = timedelta(days=14)
+        
+        time_since_last_trade = utcnow() - last_trade_time
+        return time_since_last_trade >= min_interval
+```
+
+## Trade Interval Best Practices
+
+<Steps>
+  <Step title="Start Conservative">
+    Begin with longer intervals (14+ days) when testing new agents:
+    ```python
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+    ```
+  </Step>
+  
+  <Step title="Monitor Gas Costs">
+    Calculate total gas costs vs. potential profit. More trades aren't always better.
+  </Step>
+  
+  <Step title="Consider Market Dynamics">
+    - **Fast-moving news:** Shorter intervals (1-3 days)
+    - **Long-term forecasts:** Longer intervals (14+ days)
+    - **Fixed events:** One-time bets
+  </Step>
+  
+  <Step title="Balance Capital">
+    ```python
+    # More markets = longer intervals (avoid capital concentration)
+    bet_on_n_markets_per_run = 10
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+    
+    # Fewer markets = shorter intervals (more active management)
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+    ```
+  </Step>
+</Steps>
+
+## Default Behavior
+
+If you don't specify a trade interval, the default is:
+
+```python
+# Default from DeployableTraderAgent
+same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+## Performance Considerations
+
+<Tip>
+  **Gas Optimization:** On Gnosis Chain (Omen), gas is cheap (~$0.01/transaction). You can afford more frequent updates.
+  
+  **Capital Efficiency:** Longer intervals allow capital to work across more markets simultaneously.
+  
+  **Information Edge:** If your agent incorporates new information, shorter intervals capture more value.
+</Tip>
+
+## Testing Trade Intervals
+
+Test different intervals to find optimal settings:
+
+```python
+# Test suite
+test_configs = [
+    {"interval": timedelta(days=1), "expected_trades": 30},
+    {"interval": timedelta(days=7), "expected_trades": 4},
+    {"interval": timedelta(days=14), "expected_trades": 2},
+]
+
+for config in test_configs:
+    agent.same_market_trade_interval = FixedInterval(config["interval"])
+    # Run backtest
+    results = backtest_agent(agent, duration=timedelta(days=30))
+    print(f"Interval: {config['interval']}, Trades: {results.total_trades}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Architecture" icon="robot" href="/concepts/agents">
+    Understand the full agent lifecycle
+  </Card>
+  <Card title="Betting Strategies" icon="calculator" href="/concepts/betting-strategies">
+    Optimize bet sizes with Kelly criterion
+  </Card>
+  <Card title="Supported Markets" icon="chart-line" href="/concepts/markets">
+    Learn about different market platforms
+  </Card>
+</CardGroup>

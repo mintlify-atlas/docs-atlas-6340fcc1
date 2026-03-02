@@ -1,0 +1,457 @@
+---
+title: "Betting Strategies"
+description: "Optimize bet sizing with Kelly criterion and other strategies to maximize long-term returns"
+---
+
+## Overview
+
+Betting strategies determine how much capital to risk on each prediction. The framework provides several pre-built strategies based on the Kelly criterion and other risk management approaches.
+
+<Warning>
+  Poor bet sizing can lead to ruin even with accurate predictions. The Kelly criterion helps you bet optimally based on your edge and bankroll.
+</Warning>
+
+## Available Strategies
+
+The `prediction-market-agent-tooling` library provides these betting strategies:
+
+<CardGroup cols={2}>
+  <Card title="SimpleBinaryKellyBettingStrategy" icon="chart-simple">
+    Basic Kelly betting for binary markets
+  </Card>
+  <Card title="FullBinaryKellyBettingStrategy" icon="chart-line">
+    Advanced Kelly with price impact consideration
+  </Card>
+  <Card title="SimpleCategoricalKellyBettingStrategy" icon="grid">
+    Kelly betting for categorical markets
+  </Card>
+  <Card title="MaxAccuracyWithKellyScaledBetsStrategy" icon="bullseye">
+    Optimizes for prediction accuracy
+  </Card>
+  <Card title="CategoricalMaxAccuracyBettingStrategy" icon="crosshairs">
+    Accuracy-focused for categorical markets
+  </Card>
+  <Card title="MaxExpectedValueBettingStrategy" icon="sack-dollar">
+    Maximizes expected value
+  </Card>
+</CardGroup>
+
+## The Kelly Criterion
+
+The Kelly criterion is a formula for optimal bet sizing that maximizes long-term capital growth:
+
+```
+Kelly % = (p * (b + 1) - 1) / b
+
+Where:
+p = probability of winning (your prediction)
+b = odds received on the bet (net odds)
+```
+
+<Info>
+  **Why Kelly?** It mathematically guarantees optimal long-term growth while minimizing risk of ruin. Betting more than Kelly is aggressive, betting less is conservative.
+</Info>
+
+## Implementing Betting Strategies
+
+### Basic Setup
+
+Override the `get_betting_strategy()` method in your agent:
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    SimpleBinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+
+class MyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleBinaryKellyBettingStrategy(
+            max_position_amount=USD(5.0),
+        )
+```
+
+### SimpleBinaryKellyBettingStrategy
+
+The simplest Kelly-based strategy for binary markets:
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class Berlin2OpenaiSearchAgentHigh(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(3.3),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+        )
+```
+
+```python Fixed Amount
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    # Always bet up to $2.50
+    return SimpleBinaryKellyBettingStrategy(
+        max_position_amount=USD(2.5),
+    )
+```
+</CodeGroup>
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position
+</ParamField>
+
+### FullBinaryKellyBettingStrategy
+
+Advanced Kelly strategy that accounts for price impact (slippage):
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    FullBinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+class GPTRAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return (
+            FullBinaryKellyBettingStrategy(
+                max_position_amount=get_maximum_possible_bet_amount(
+                    min_=USD(0.1),
+                    max_=USD(8),
+                    trading_balance=market.get_trade_balance(self.api_keys),
+                ),
+                max_price_impact=0.57,
+            )
+            if isinstance(market, OmenAgentMarket)
+            else super().get_betting_strategy(market)
+        )
+```
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position
+</ParamField>
+
+<ParamField path="max_price_impact" type="float" default="0.1">
+  Maximum acceptable price impact (slippage) as a fraction. 
+  - `0.1` = 10% price impact
+  - `0.57` = 57% price impact (very aggressive)
+  - Higher values allow larger bets but worse prices
+</ParamField>
+
+<Tip>
+  Use `max_price_impact` carefully. On low-liquidity markets, large bets can significantly move prices against you.
+</Tip>
+
+### SimpleCategoricalKellyBettingStrategy
+
+For markets with more than two outcomes:
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    SimpleCategoricalKellyBettingStrategy,
+)
+
+class Berlin1PolySentAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(2.05),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+            allow_multiple_bets=False,    # Only bet on one outcome
+            allow_shorting=False,          # Don't short outcomes
+            multicategorical=False,        # Single-outcome betting
+        )
+```
+
+<ParamField path="allow_multiple_bets" type="bool" default="True">
+  Allow betting on multiple outcomes in the same market
+</ParamField>
+
+<ParamField path="allow_shorting" type="bool" default="False">
+  Allow betting against outcomes (shorting)
+</ParamField>
+
+<ParamField path="multicategorical" type="bool" default="False">
+  Enable multi-categorical betting mode
+</ParamField>
+
+### MaxAccuracyWithKellyScaledBetsStrategy
+
+Optimizes for accuracy while using Kelly scaling:
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    MaxAccuracyWithKellyScaledBetsStrategy,
+)
+
+class Berlin2OpenaiSearchAgentVariable(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxAccuracyWithKellyScaledBetsStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(6),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+        )
+```
+
+<Info>
+  This strategy is ideal when you care more about prediction accuracy than maximizing returns. Good for tournaments and reputation building.
+</Info>
+
+### CategoricalMaxAccuracyBettingStrategy
+
+Minimalist strategy focusing on accuracy:
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    CategoricalMaxAccuracyBettingStrategy,
+)
+
+class SkewAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # Divide bankroll across many small bets
+        max_position_amount = max(
+            USD(0.01), 
+            market.get_trade_balance(self.api_keys) / 100
+        )
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=max_position_amount,
+        )
+```
+
+## Dynamic Bet Sizing
+
+Adjust bet sizes based on market conditions:
+
+```python
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    trading_balance = market.get_trade_balance(self.api_keys)
+    
+    # Scale bet size with confidence and liquidity
+    if market.total_liquidity > 1000:
+        max_bet = USD(10.0)
+    elif market.total_liquidity > 100:
+        max_bet = USD(5.0)
+    else:
+        max_bet = USD(1.0)
+    
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=get_maximum_possible_bet_amount(
+            min_=USD(0.1),
+            max_=max_bet,
+            trading_balance=trading_balance,
+        ),
+        max_price_impact=0.5,
+    )
+```
+
+## The get_maximum_possible_bet_amount Helper
+
+This utility function manages bet sizing within safe bounds:
+
+```python
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+max_amount = get_maximum_possible_bet_amount(
+    min_=USD(0.1),      # Minimum bet size
+    max_=USD(5.0),      # Maximum bet size
+    trading_balance=market.get_trade_balance(self.api_keys),
+)
+```
+
+**How it works:**
+1. Uses 95% of trading balance (keeps 5% for fees)
+2. Ensures bet is at least `min_` amount
+3. Caps bet at `max_` amount
+4. Returns the value in between based on available balance
+
+## Risk Management Best Practices
+
+<AccordionGroup>
+  <Accordion title="Conservative: Fractional Kelly">
+    Bet a fraction of Kelly to reduce variance:
+    
+    ```python
+    # Bet 50% of Kelly recommendation
+    return SimpleBinaryKellyBettingStrategy(
+        max_position_amount=USD(5.0) * 0.5,
+    )
+    ```
+    
+    **When to use:**
+    - You're uncertain about your edge
+    - You want smoother equity curves
+    - You're testing a new agent
+  </Accordion>
+  
+  <Accordion title="Balanced: Full Kelly">
+    Bet the full Kelly amount:
+    
+    ```python
+    return SimpleBinaryKellyBettingStrategy(
+        max_position_amount=USD(5.0),
+    )
+    ```
+    
+    **When to use:**
+    - You're confident in your predictions
+    - You want optimal long-term growth
+    - You can handle volatility
+  </Accordion>
+  
+  <Accordion title="Aggressive: Kelly with Price Impact">
+    Accept higher slippage for larger positions:
+    
+    ```python
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=USD(10.0),
+        max_price_impact=0.7,  # Accept 70% slippage
+    )
+    ```
+    
+    **When to use:**
+    - High-liquidity markets
+    - Strong conviction trades
+    - When opportunity cost is high
+  </Accordion>
+  
+  <Accordion title="Ultra-Conservative: Fixed Small Bets">
+    Ignore Kelly and bet fixed amounts:
+    
+    ```python
+    return CategoricalMaxAccuracyBettingStrategy(
+        max_position_amount=USD(0.01),
+    )
+    ```
+    
+    **When to use:**
+    - Learning and experimentation
+    - Very uncertain predictions
+    - Volume-based strategies (many small bets)
+  </Accordion>
+</AccordionGroup>
+
+## No Betting Strategy (Tiny Bets)
+
+If you don't override `get_betting_strategy()`, the base class uses a minimal betting strategy:
+
+```python
+# Default behavior - very small bets
+class MyAgent(DeployableTraderAgent):
+    pass  # No betting strategy override
+    
+# This will place tiny bets suitable only for testing
+```
+
+<Warning>
+  The default strategy bets very small amounts. Always implement a proper betting strategy for production agents.
+</Warning>
+
+## Example: Adaptive Strategy
+
+Combine multiple factors for sophisticated bet sizing:
+
+```python
+class AdaptiveAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        balance = market.get_trade_balance(self.api_keys)
+        
+        # Factor 1: Market liquidity
+        if market.total_liquidity < 100:
+            max_bet = USD(1.0)
+            max_impact = 0.3
+        elif market.total_liquidity < 1000:
+            max_bet = USD(5.0)
+            max_impact = 0.5
+        else:
+            max_bet = USD(10.0)
+            max_impact = 0.7
+        
+        # Factor 2: Time until close
+        time_until_close = market.close_time - utcnow()
+        if time_until_close < timedelta(hours=24):
+            max_bet *= 0.5  # Reduce bet size for markets closing soon
+        
+        # Factor 3: Current price (avoid betting at extremes)
+        if market.p_yes > 0.95 or market.p_yes < 0.05:
+            max_bet *= 0.5
+        
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=max_bet,
+                trading_balance=balance,
+            ),
+            max_price_impact=max_impact,
+        )
+```
+
+## Testing Betting Strategies
+
+<Steps>
+  <Step title="Start with Manifold">
+    Test on Manifold Markets (play money) first:
+    ```bash
+    python prediction_market_agent/run_agent.py your_agent manifold
+    ```
+  </Step>
+  
+  <Step title="Use Conservative Kelly">
+    Start with 25-50% of Kelly recommendation:
+    ```python
+    max_position_amount=USD(2.0)  # Conservative
+    ```
+  </Step>
+  
+  <Step title="Monitor Performance">
+    Track your Sharpe ratio, max drawdown, and ROI over time.
+  </Step>
+  
+  <Step title="Increase Gradually">
+    Once proven, increase bet sizes or move to real-money markets.
+  </Step>
+</Steps>
+
+## Advanced: Custom Betting Strategies
+
+Implement your own strategy by extending `BettingStrategy`:
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import BettingStrategy
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+
+class MyCustomStrategy(BettingStrategy):
+    def calculate_bet_amount(
+        self,
+        answer: ProbabilisticAnswer,
+        market: AgentMarket,
+    ) -> USD:
+        # Your custom logic here
+        kelly_pct = (answer.p_yes * 2 - 1)  # Simplified Kelly
+        bet = self.max_position_amount * kelly_pct * answer.confidence
+        return max(USD(0), bet)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Architecture" icon="robot" href="/concepts/agents">
+    Learn how to implement the betting strategy in your agent
+  </Card>
+  <Card title="Trade Intervals" icon="clock" href="/concepts/trade-intervals">
+    Control when your agent trades on the same market
+  </Card>
+</CardGroup>

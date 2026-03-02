@@ -1,0 +1,609 @@
+---
+title: 'LLM Utilities API'
+description: 'API reference for LLM provider utilities and helper functions'
+icon: 'brain'
+---
+
+## Overview
+
+LLM utilities provide helper functions for working with language model providers, including OpenAI, Anthropic, and OpenRouter. These utilities are used throughout the agent framework for model initialization and configuration.
+
+## Provider Functions
+
+### get_openai_provider
+
+Creates an OpenAI provider instance for use with PydanticAI agents.
+
+**Location:** `prediction_market_agent_tooling.tools.openai_utils`
+
+<ParamField path="api_key" type="SecretStr" required>
+  OpenAI API key from environment or APIKeys
+</ParamField>
+
+<ParamField path="base_url" type="str">
+  Custom base URL for OpenAI API (optional)
+  
+  Use for:
+  - OpenRouter: `https://openrouter.ai/api/v1`
+  - Custom endpoints
+  - Proxies
+</ParamField>
+
+<ResponseField name="return" type="OpenAIProvider">
+  Configured OpenAI provider instance for PydanticAI
+</ResponseField>
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_market_agent.utils import APIKeys
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+api_keys = APIKeys()
+
+agent = Agent(
+    OpenAIModel(
+        "gpt-4o-2024-08-06",
+        provider=get_openai_provider(api_key=api_keys.openai_api_key),
+    )
+)
+```
+
+```python OpenRouter
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_market_agent.utils import APIKeys, OPENROUTER_BASE_URL
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+api_keys = APIKeys()
+
+agent = Agent(
+    OpenAIModel(
+        "google/gemini-2.0-flash-001",
+        provider=get_openai_provider(
+            api_key=api_keys.openrouter_api_key,
+            base_url=OPENROUTER_BASE_URL,
+        ),
+    )
+)
+```
+
+```python Prophet Agent
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_prophet.benchmark.agents import PredictionProphetAgent
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.settings import ModelSettings
+
+agent = PredictionProphetAgent(
+    research_agent=Agent(
+        OpenAIModel(
+            "gpt-4o-2024-08-06",
+            provider=get_openai_provider(api_key=api_keys.openai_api_key),
+        ),
+        model_settings=ModelSettings(temperature=0.7),
+    ),
+    prediction_agent=Agent(
+        OpenAIModel(
+            "gpt-4o-2024-08-06",
+            provider=get_openai_provider(api_key=api_keys.openai_api_key),
+        ),
+        model_settings=ModelSettings(temperature=0.0),
+    ),
+)
+```
+</CodeGroup>
+
+---
+
+## Configuration Classes
+
+### APIKeys
+
+Configuration class for managing API keys and credentials.
+
+**Location:** `prediction_market_agent.utils`
+
+#### Properties
+
+<ResponseField name="openai_api_key" type="SecretStr">
+  OpenAI API key (raises error if not set)
+</ResponseField>
+
+<ResponseField name="openrouter_api_key" type="SecretStr">
+  OpenRouter API key (raises error if not set)
+</ResponseField>
+
+<ResponseField name="anthropic_api_key" type="SecretStr">
+  Anthropic API key (raises error if not set)
+</ResponseField>
+
+<ResponseField name="replicate_api_key" type="SecretStr">
+  Replicate API key (raises error if not set)
+</ResponseField>
+
+<ResponseField name="tavily_api_key" type="SecretStr">
+  Tavily search API key (raises error if not set)
+</ResponseField>
+
+#### Environment Variables
+
+All keys are loaded from environment variables:
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
+ANTHROPIC_API_KEY=sk-ant-...
+REPLICATE_API_KEY=r8_...
+TAVILY_API_KEY=tvly-...
+```
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent.utils import APIKeys
+
+keys = APIKeys()
+
+# Access keys (raises error if not set)
+openai_key = keys.openai_api_key
+tavily_key = keys.tavily_api_key
+
+# Use with providers
+provider = get_openai_provider(api_key=keys.openai_api_key)
+```
+
+```python Check Optional Keys
+from prediction_market_agent.utils import APIKeys
+
+keys = APIKeys()
+
+# Optional keys return None if not set
+if keys.PINECONE_API_KEY:
+    print("Pinecone configured")
+```
+</CodeGroup>
+
+---
+
+### DBKeys
+
+Database configuration for caching and storage.
+
+**Location:** `prediction_market_agent.utils`
+
+<ResponseField name="SQLALCHEMY_DB_URL" type="SecretStr | None">
+  Database URL for SQLAlchemy (optional)
+</ResponseField>
+
+```python
+from prediction_market_agent.utils import DBKeys
+
+db_keys = DBKeys()
+if db_keys.SQLALCHEMY_DB_URL:
+    print("Database configured")
+```
+
+---
+
+## Model Configuration
+
+### DEFAULT_OPENAI_MODEL
+
+Default OpenAI model used throughout the agent framework.
+
+**Location:** `prediction_market_agent.utils`
+
+```python
+DEFAULT_OPENAI_MODEL: KnownModelName = "openai:gpt-4o-2024-08-06"
+```
+
+<Note>
+  This constant ensures consistent model usage across agents. Do not update to a worse or more expensive model without thorough testing.
+</Note>
+
+<CodeGroup>
+```python Usage
+from prediction_market_agent.utils import DEFAULT_OPENAI_MODEL
+from pydantic_ai.models import infer_model
+
+model = infer_model(DEFAULT_OPENAI_MODEL)
+```
+</CodeGroup>
+
+---
+
+### OPENROUTER_BASE_URL
+
+Base URL for OpenRouter API.
+
+**Location:** `prediction_market_agent.utils`
+
+```python
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+```
+
+---
+
+## Utility Functions
+
+### get_market_prompt
+
+Generates standardized prompt for market prediction questions.
+
+**Location:** `prediction_market_agent.utils`
+
+<ParamField path="question" type="str" required>
+  The market question to research
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Formatted prompt for LLM
+</ResponseField>
+
+<CodeGroup>
+```python Usage
+from prediction_market_agent.utils import get_market_prompt
+
+question = "Will Bitcoin reach $100k by 2025?"
+prompt = get_market_prompt(question)
+
+print(prompt)
+# Output:
+# Research and report on the following question:
+#
+# Will Bitcoin reach $100k by 2025?
+#
+# Return ONLY a single world answer: 'Yes' or 'No', even if you are unsure. 
+# If you are unsure, make your best guess.
+```
+</CodeGroup>
+
+---
+
+### parse_result_to_boolean
+
+Converts LLM text response to boolean.
+
+**Location:** `prediction_market_agent.utils`
+
+<ParamField path="result" type="str" required>
+  LLM response string ("Yes" or "No")
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` for "Yes", `False` for "No"
+</ResponseField>
+
+<Warning>
+  Raises error if result is not "Yes" or "No" (case-insensitive)
+</Warning>
+
+```python
+from prediction_market_agent.utils import parse_result_to_boolean
+
+result = "Yes"
+boolean_result = parse_result_to_boolean(result)  # True
+```
+
+---
+
+### parse_result_to_str
+
+Converts boolean to standardized string format.
+
+**Location:** `prediction_market_agent.utils`
+
+<ParamField path="result" type="bool" required>
+  Boolean value to convert
+</ParamField>
+
+<ResponseField name="return" type="str">
+  "Yes" for `True`, "No" for `False`
+</ResponseField>
+
+```python
+from prediction_market_agent.utils import parse_result_to_str
+
+result = parse_result_to_str(True)   # "Yes"
+result = parse_result_to_str(False)  # "No"
+```
+
+---
+
+### completion_str_to_json
+
+Cleans and parses JSON from LLM completions.
+
+**Location:** `prediction_market_agent.utils`
+
+<ParamField path="completion" type="str" required>
+  LLM completion string containing JSON (possibly with markdown code fences)
+</ParamField>
+
+<ResponseField name="return" type="dict[str, Any]">
+  Parsed JSON dictionary
+</ResponseField>
+
+**Handles:**
+- JSON wrapped in markdown code blocks
+- Extra whitespace
+- Text before/after JSON
+
+<CodeGroup>
+```python Usage
+from prediction_market_agent.utils import completion_str_to_json
+
+completion = '''
+```json
+{
+    "result": "YES",
+    "reasoning": "Based on current trends..."
+}
+```
+'''
+
+result = completion_str_to_json(completion)
+print(result["result"])  # "YES"
+```
+
+```python With Models
+from prediction_market_agent.utils import completion_str_to_json
+from pydantic import BaseModel
+
+class PredictionOutput(BaseModel):
+    result: str
+    reasoning: str
+
+completion = llm.invoke(prompt).content
+data = completion_str_to_json(completion)
+output = PredictionOutput.model_validate(data)
+```
+</CodeGroup>
+
+---
+
+### patch_sqlite3
+
+Patches SQLite3 to use pysqlite3-binary in restricted environments.
+
+**Location:** `prediction_market_agent.utils`
+
+<Note>
+  Useful in environments like Streamlit Cloud where system SQLite cannot be updated and Chroma requires SQLite >= 3.35.0.
+</Note>
+
+```python
+from prediction_market_agent.utils import patch_sqlite3
+
+# Call before importing Chroma or other SQLite-dependent libraries
+patch_sqlite3()
+
+import chromadb
+```
+
+---
+
+## Provider Examples
+
+### OpenAI
+
+<CodeGroup>
+```python Standard OpenAI
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_market_agent.utils import APIKeys, DEFAULT_OPENAI_MODEL
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.settings import ModelSettings
+
+api_keys = APIKeys()
+
+model = OpenAIModel(
+    DEFAULT_OPENAI_MODEL,
+    provider=get_openai_provider(api_key=api_keys.openai_api_key),
+)
+
+agent = Agent(model, model_settings=ModelSettings(temperature=0.0))
+result = agent.run_sync("What is 2+2?")
+```
+
+```python O-series Models
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.settings import ModelSettings
+
+# O-series models only support temperature=1.0
+agent = Agent(
+    OpenAIModel(
+        "o3-mini-2025-01-31",
+        provider=get_openai_provider(api_key=api_keys.openai_api_key),
+    ),
+    model_settings=ModelSettings(temperature=1.0),
+)
+```
+</CodeGroup>
+
+---
+
+### Anthropic
+
+<CodeGroup>
+```python Claude Models
+from prediction_market_agent.utils import APIKeys
+from pydantic_ai import Agent
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.settings import ModelSettings
+
+api_keys = APIKeys()
+
+agent = Agent(
+    AnthropicModel(
+        "claude-3-5-sonnet-20241022",
+        provider=AnthropicProvider(
+            api_key=api_keys.anthropic_api_key.get_secret_value()
+        ),
+    ),
+    model_settings=ModelSettings(temperature=0.7),
+)
+```
+</CodeGroup>
+
+---
+
+### OpenRouter
+
+<CodeGroup>
+```python Multiple Providers
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_market_agent.utils import APIKeys, OPENROUTER_BASE_URL
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+api_keys = APIKeys()
+
+# DeepSeek via OpenRouter
+deepseek_agent = Agent(
+    OpenAIModel(
+        "deepseek/deepseek-chat",
+        provider=get_openai_provider(
+            api_key=api_keys.openrouter_api_key,
+            base_url=OPENROUTER_BASE_URL,
+        ),
+    )
+)
+
+# Gemini via OpenRouter
+gemini_agent = Agent(
+    OpenAIModel(
+        "google/gemini-2.0-flash-001",
+        provider=get_openai_provider(
+            api_key=api_keys.openrouter_api_key,
+            base_url=OPENROUTER_BASE_URL,
+        ),
+    )
+)
+```
+</CodeGroup>
+
+---
+
+## Model Settings
+
+### Temperature Guidelines
+
+<CardGroup cols={2}>
+  <Card title="Research (0.7)" icon="flask">
+    **Use for:**
+    - Research agents
+    - Generating search queries
+    - Creative analysis
+    - Exploring possibilities
+    
+    ```python
+    ModelSettings(temperature=0.7)
+    ```
+  </Card>
+  
+  <Card title="Prediction (0.0)" icon="bullseye">
+    **Use for:**
+    - Final predictions
+    - Probability estimates
+    - Deterministic outputs
+    - Consistent results
+    
+    ```python
+    ModelSettings(temperature=0.0)
+    ```
+  </Card>
+</CardGroup>
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Key Management" icon="key">
+    - Use environment variables for all keys
+    - Never hardcode API keys
+    - Use `SecretStr` for key storage
+    - Validate keys on startup
+  </Card>
+  
+  <Card title="Model Selection" icon="sliders">
+    - Use `DEFAULT_OPENAI_MODEL` for consistency
+    - Test thoroughly before changing defaults
+    - Consider cost vs. performance tradeoffs
+    - Document model-specific requirements
+  </Card>
+  
+  <Card title="Provider Configuration" icon="gear">
+    - Always use `get_openai_provider` helper
+    - Set appropriate base URLs for custom endpoints
+    - Configure timeouts for production
+    - Handle provider errors gracefully
+  </Card>
+  
+  <Card title="Temperature Settings" icon="temperature-half">
+    - 0.7 for research and creativity
+    - 0.0 for predictions and deterministic tasks
+    - 1.0 for O-series models (required)
+    - Test different values for your use case
+  </Card>
+</CardGroup>
+
+---
+
+## Error Handling
+
+<Warning>
+  Common errors:
+  - Missing API keys in environment
+  - Invalid API keys
+  - Rate limiting
+  - Model not available
+  - Invalid temperature for model
+</Warning>
+
+<CodeGroup>
+```python Key Validation
+from prediction_market_agent.utils import APIKeys
+from prediction_market_agent_tooling.tools.utils import check_not_none
+
+try:
+    keys = APIKeys()
+    openai_key = keys.openai_api_key  # Raises if not set
+except Exception as e:
+    print(f"API key error: {e}")
+    exit(1)
+```
+
+```python Provider Errors
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+try:
+    provider = get_openai_provider(api_key=api_keys.openai_api_key)
+    agent = Agent(OpenAIModel("gpt-4o", provider=provider))
+    result = agent.run_sync("test")
+except Exception as e:
+    print(f"Provider error: {e}")
+```
+</CodeGroup>
+
+---
+
+## Dependencies
+
+```bash
+pip install pydantic-ai openai anthropic pydantic pydantic-settings
+```
+
+## See Also
+
+- [Prophet Agent API](/api/agents/prophet-agent) - Uses these utilities extensively
+- [Search API](/api/tools/search) - Requires API keys
+- [Web Scraping API](/api/tools/web-scraping) - Uses OpenAI for summarization
+- [Configuration Guide](/configuration) - Environment setup

@@ -1,0 +1,367 @@
+---
+title: 'Research & Search'
+description: 'Comprehensive research and search utilities for gathering market intelligence'
+icon: 'magnifying-glass'
+---
+
+## Overview
+
+The research tools provide powerful capabilities for gathering information from the web, including Google search integration and the Prediction Prophet research framework for deep market analysis.
+
+## Google Search Tool
+
+Integrate Google search results directly into your prediction agents.
+
+<CodeGroup>
+```python google_search.py
+from prediction_market_agent.tools.web_search.google import GoogleSearchTool
+
+# Initialize the tool
+search_tool = GoogleSearchTool()
+
+# Execute search
+results = search_tool.fn(query="Bitcoin price prediction 2024")
+```
+</CodeGroup>
+
+<Info>
+  The Google search tool uses the Serper API via `prediction_market_agent_tooling`. Ensure you have `SERPER_API_KEY` set in your environment.
+</Info>
+
+### Function Schema
+
+For integration with function-calling agents:
+
+```python
+search_google_schema = {
+    "type": "function",
+    "function": {
+        "name": "search_google",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The google search query.",
+                }
+            },
+            "required": ["query"],
+        },
+        "description": "Google search to return search results from a query.",
+    },
+}
+```
+
+### Usage Example
+
+<CodeGroup>
+```python search_example.py
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+
+def research_market(question: str) -> list[str]:
+    # Search for relevant URLs
+    urls = search_google_serper(question)
+    
+    # Filter and scrape top results
+    contents = []
+    for url in urls[:5]:
+        if "manifold" not in url:  # Filter out certain domains
+            content = web_scrape(url)
+            if content:
+                contents.append(content[:10000])  # Limit size
+    
+    return contents
+```
+</CodeGroup>
+
+## Prediction Prophet Research
+
+The Prediction Prophet research tool provides a sophisticated framework for conducting thorough market research using AI agents.
+
+<Note>
+  This tool is based on the [Prediction Prophet](https://github.com/agentcoinorg/predictionprophet) framework and provides deep research capabilities with multiple search iterations.
+</Note>
+
+### Prophet Research Function
+
+<CodeGroup>
+```python research.py
+from prediction_market_agent.tools.prediction_prophet.research import prophet_research
+from pydantic_ai import Agent
+from pydantic.types import SecretStr
+from prediction_market_agent.utils import APIKeys
+
+# Initialize API keys
+keys = APIKeys()
+
+# Create research agent
+agent = Agent(
+    model="openai:gpt-4o",
+    system_prompt="You are a research assistant for prediction markets."
+)
+
+# Conduct research
+research_result = prophet_research(
+    agent=agent,
+    goal="Will Bitcoin reach $100k by end of 2024?",
+    openai_api_key=keys.openai_api_key,
+    tavily_api_key=keys.tavily_api_key,
+    initial_subqueries_limit=20,
+    subqueries_limit=4,
+    max_results_per_search=5,
+    min_scraped_sites=10
+)
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="agent" type="Agent" required>
+  Pydantic AI agent instance that will perform the research
+</ParamField>
+
+<ParamField path="goal" type="str" required>
+  The research objective or question to investigate
+</ParamField>
+
+<ParamField path="openai_api_key" type="SecretStr" required>
+  OpenAI API key for LLM operations
+</ParamField>
+
+<ParamField path="tavily_api_key" type="SecretStr" required>
+  Tavily API key for web search
+</ParamField>
+
+<ParamField path="initial_subqueries_limit" type="int" default="20">
+  Maximum number of initial subqueries to generate
+</ParamField>
+
+<ParamField path="subqueries_limit" type="int" default="4">
+  Number of refined subqueries to execute
+</ParamField>
+
+<ParamField path="max_results_per_search" type="int" default="5">
+  Maximum search results to retrieve per query
+</ParamField>
+
+<ParamField path="min_scraped_sites" type="int" default="10">
+  Minimum number of sites to scrape; raises error if not met
+</ParamField>
+
+<AccordionGroup>
+  <Accordion title="How It Works" icon="gears">
+    The `prophet_research` function uses a multi-stage approach:
+
+    1. **Query Generation**: Breaks down the main goal into subqueries
+    2. **Search Execution**: Performs web searches using Tavily API
+    3. **Content Scraping**: Extracts content from top search results
+    4. **Deduplication**: Removes duplicate URLs across searches
+    5. **Quality Check**: Ensures minimum number of sites were successfully scraped
+
+    ```python
+    def prophet_research(
+        agent: Agent,
+        goal: str,
+        openai_api_key: SecretStr,
+        tavily_api_key: SecretStr,
+        initial_subqueries_limit: int = 20,
+        subqueries_limit: int = 4,
+        max_results_per_search: int = 5,
+        min_scraped_sites: int = 10,
+    ) -> Research:
+        return original_research(
+            goal=goal,
+            agent=agent,
+            use_summaries=False,
+            initial_subqueries_limit=initial_subqueries_limit,
+            subqueries_limit=subqueries_limit,
+            max_results_per_search=max_results_per_search,
+            min_scraped_sites=min_scraped_sites,
+            openai_api_key=openai_api_key,
+            tavily_api_key=tavily_api_key,
+            logger=logger,
+        )
+    ```
+  </Accordion>
+
+  <Accordion title="Research Output" icon="file">
+    The `Research` object contains:
+
+    - **subqueries**: List of generated search queries
+    - **sources**: URLs and content from scraped sites
+    - **synthesis**: AI-generated summary of findings
+    - **confidence**: Confidence score for the research results
+  </Accordion>
+</AccordionGroup>
+
+### Prophet Prediction
+
+Combine research with prediction generation:
+
+<CodeGroup>
+```python make_prediction.py
+from prediction_market_agent.tools.prediction_prophet.research import prophet_make_prediction
+
+# Generate prediction with built-in research
+prediction = prophet_make_prediction(
+    agent=agent,
+    question="Will Bitcoin reach $100k by end of 2024?",
+    openai_api_key=keys.openai_api_key,
+    tavily_api_key=keys.tavily_api_key
+)
+
+print(f"Probability: {prediction.probability}")
+print(f"Confidence: {prediction.confidence}")
+print(f"Reasoning: {prediction.reasoning}")
+```
+</CodeGroup>
+
+<Warning>
+  The `min_scraped_sites` parameter acts as a quality threshold. If fewer sites are successfully scraped (due to duplicates, failures, or insufficient results), the function will raise an error. Adjust this based on your research thoroughness requirements.
+</Warning>
+
+## Tavily Search Tool
+
+For agents using CrewAI or other frameworks, a Tavily search tool is available:
+
+<CodeGroup>
+```python tavily_tool.py
+from prediction_market_agent.agents.think_thoroughly_agent.think_thoroughly_agent import tavily_search_tool
+
+# Use as a CrewAI tool
+@tool("tavily_search_tool")
+def tavily_search_tool(query: str) -> list[dict[str, str]]:
+    """
+    Given a search query, returns a list of dictionaries with results 
+    from internet search using Tavily.
+    """
+    output = tavily_search(query=query)
+    return [
+        {
+            "title": r.title,
+            "url": r.url,
+            "content": r.content,
+        }
+        for r in output.results
+    ]
+```
+</CodeGroup>
+
+## Integration with Think Thoroughly Agent
+
+The Think Thoroughly Agent uses research tools for deep market analysis:
+
+<CodeGroup>
+```python think_thoroughly_example.py
+from prediction_market_agent.agents.think_thoroughly_agent.think_thoroughly_agent import ThinkThoroughlyBase
+
+class MyResearchAgent(ThinkThoroughlyBase):
+    def analyze_market(self, question: str):
+        # Conduct research
+        research = prophet_research(
+            agent=self.agent,
+            goal=question,
+            openai_api_key=self.keys.openai_api_key,
+            tavily_api_key=self.keys.tavily_api_key,
+            min_scraped_sites=10
+        )
+        
+        # Use research for prediction
+        return self.make_prediction(research)
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Query Optimization" icon="sliders">
+    Break complex questions into specific subqueries for better search results. The Prophet framework does this automatically.
+  </Card>
+  <Card title="Source Diversity" icon="network-wired">
+    Use multiple search providers and scrape varied sources to reduce bias and improve accuracy.
+  </Card>
+  <Card title="Content Limits" icon="ruler">
+    Truncate scraped content to fit context windows. The Advanced Agent limits to 10,000 characters per source.
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation">
+    Always handle search and scraping failures gracefully. Not all URLs will be accessible.
+  </Card>
+</CardGroup>
+
+## Rate Limiting
+
+<Tip>
+  Be mindful of API rate limits:
+  - **Serper API**: Check your plan's request limits
+  - **Tavily API**: Free tier has limited searches per month
+  - **Web scraping**: Implement delays between requests to avoid being blocked
+</Tip>
+
+## Advanced Usage
+
+### Custom Research Pipeline
+
+<CodeGroup>
+```python custom_research.py
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+
+class CustomResearcher:
+    def __init__(self, max_sources: int = 10):
+        self.max_sources = max_sources
+    
+    def research(self, question: str) -> dict:
+        # Generate subqueries
+        subqueries = self.generate_subqueries(question)
+        
+        # Search and collect URLs
+        all_urls = set()
+        for subquery in subqueries:
+            results = tavily_search(query=subquery)
+            all_urls.update([r.url for r in results.results[:5]])
+        
+        # Scrape content
+        contents = []
+        for url in list(all_urls)[:self.max_sources]:
+            content = web_scrape(url)
+            if content:
+                contents.append({
+                    "url": url,
+                    "content": content[:5000]
+                })
+        
+        return {
+            "question": question,
+            "sources": contents,
+            "total_sources": len(contents)
+        }
+    
+    def generate_subqueries(self, question: str) -> list[str]:
+        # Use LLM to generate related queries
+        # Implementation details...
+        pass
+```
+</CodeGroup>
+
+## Dependencies
+
+```bash
+# Core dependencies
+pip install prediction-market-agent-tooling prediction-prophet
+
+# Search APIs
+pip install tavily-python google-search-results
+
+# Additional tools
+pip install pydantic-ai crewai
+```
+
+## Environment Variables
+
+```bash
+# Required API keys
+OPENAI_API_KEY=your_openai_key
+TAVILY_API_KEY=your_tavily_key
+SERPER_API_KEY=your_serper_key
+```

@@ -1,0 +1,404 @@
+---
+title: "Max Expected Value Strategy"
+description: "API reference for MaxExpectedValueBettingStrategy that maximizes expected monetary returns"
+---
+
+## Overview
+
+The `MaxExpectedValueBettingStrategy` is a betting strategy that focuses on maximizing expected value (EV) rather than using the Kelly criterion. This strategy is ideal when you want to maximize expected returns per bet, especially for high-confidence predictions.
+
+<Info>
+  Expected Value (EV) represents the average return you expect from a bet over many repetitions. Positive EV means profitable over time.
+</Info>
+
+## When to Use
+
+Choose `MaxExpectedValueBettingStrategy` when:
+- You have high-confidence predictions with clear edges
+- You prefer simpler bet sizing than Kelly
+- You're optimizing for total expected returns rather than growth rate
+- You want consistent bet sizes regardless of odds
+
+<Warning>
+  Unlike Kelly betting, this strategy doesn't inherently protect against ruin risk. Use appropriate position limits.
+</Warning>
+
+## MaxExpectedValueBettingStrategy
+
+### Import
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    MaxExpectedValueBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+```
+
+### Usage
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+
+class MyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=USD(1.0),
+        )
+```
+
+```python Dynamic Sizing
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class EVAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.5),
+                max_=USD(2.0),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            )
+        )
+```
+
+```python Conservative (Small Fixed Bets)
+class ConservativeEVAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # Small fixed bets for EV accumulation
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=USD(0.5),
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position.
+  
+  **Recommended values:**
+  - `USD(0.5)` to `USD(1.0)` - Conservative, for testing or uncertain edges
+  - `USD(2.0)` to `USD(5.0)` - Moderate, for validated positive EV strategies
+  - `USD(10.0)+` - Aggressive, only for high-confidence strategies
+  
+  Unlike Kelly betting, the strategy will tend to bet close to this maximum when it identifies positive expected value.
+</ParamField>
+
+## How It Works
+
+### Expected Value Calculation
+
+Expected value is calculated as:
+
+```
+EV = (P(win) × Amount_won) - (P(lose) × Amount_lost)
+```
+
+For a binary prediction market:
+
+```
+EV = (p_yes × payout_if_yes) - ((1 - p_yes) × amount_bet)
+```
+
+### Bet Sizing Logic
+
+The strategy bets up to `max_position_amount` when:
+1. The predicted probability differs from market odds (edge exists)
+2. Expected value is positive
+3. Position size doesn't exceed maximum
+
+<Tip>
+  MaxExpectedValue strategy is more aggressive than Kelly - it will bet near maximum when any positive EV is detected.
+</Tip>
+
+## Real-World Example
+
+### DeployablePredictionProphetGPTo3mini
+
+This agent uses MaxExpectedValue with small bets for the o3-mini model:
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    MaxExpectedValueBettingStrategy,
+)
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+from prediction_market_agent.utils import APIKeys
+
+class DeployablePredictionProphetGPTo3mini(DeployableTraderAgent):
+    agent: PredictionProphetAgent
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.5),
+                max_=USD(1),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            )
+        )
+```
+
+**Location:** `prediction_market_agent/agents/prophet_agent/deploy.py:730`
+
+**Use case:** Small position sizing for a reasoning model (o3-mini) where the goal is to accumulate small positive EV bets rather than maximize growth rate.
+
+## Expected Value vs Kelly
+
+<AccordionGroup>
+  <Accordion title="MaxExpectedValue">
+    **Pros:**
+    - Simpler to understand and implement
+    - Maximizes expected monetary returns per bet
+    - Consistent bet sizing
+    - Good for tournaments and leaderboards
+    
+    **Cons:**
+    - No inherent bankroll protection
+    - Can be more aggressive than optimal
+    - Doesn't account for variance
+    - Risk of ruin if edges are overestimated
+    
+    **Best for:**
+    - High-confidence predictions
+    - Small bet sizes relative to bankroll
+    - When you want predictable position sizes
+  </Accordion>
+  
+  <Accordion title="Kelly Criterion">
+    **Pros:**
+    - Mathematically optimal for long-term growth
+    - Inherent bankroll protection
+    - Scales bets with edge and odds
+    - Minimizes risk of ruin
+    
+    **Cons:**
+    - More complex calculation
+    - Can recommend very large bets with big edges
+    - Sensitive to probability estimates
+    - Higher variance
+    
+    **Best for:**
+    - Long-term capital growth
+    - Variable confidence levels
+    - Risk-managed betting
+  </Accordion>
+</AccordionGroup>
+
+## Integration Example
+
+Combine MaxExpectedValue with answer generation:
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    MaxExpectedValueBettingStrategy,
+)
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import USD, Probability
+
+class SimpleEVAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=USD(1.0),
+        )
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Your prediction logic here
+        return ProbabilisticAnswer(
+            p_yes=Probability(0.75),
+            confidence=0.8,
+            reasoning="Strong evidence suggests yes outcome",
+        )
+```
+
+## Comparison with Market Odds
+
+MaxExpectedValue strategy identifies profitable opportunities by comparing:
+
+```python
+# Example calculation
+your_probability = 0.70  # You think event has 70% chance
+market_price = 0.50      # Market is at 50% (2:1 odds)
+
+# Your edge
+edge = your_probability - market_price  # 0.20 or 20% edge
+
+# Expected value for $1 bet
+if_win = 1.0 / market_price  # $2.00 payout per $1
+if_lose = -1.0                # Lose $1
+
+EV = (0.70 × 2.00) + (0.30 × -1.00) = 1.40 - 0.30 = $1.10
+
+# Positive EV of $1.10 per $1 bet (110% ROI)
+```
+
+<Info>
+  The strategy automatically identifies these opportunities - you just provide the probability via `ProbabilisticAnswer`.
+</Info>
+
+## Risk Management
+
+<Warning>
+  MaxExpectedValue can be aggressive. Always set appropriate `max_position_amount` limits.
+</Warning>
+
+### Conservative Approach
+
+```python
+# Limit to 1% of bankroll per bet
+class ConservativeAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        balance = market.get_trade_balance(self.api_keys)
+        max_bet = balance * 0.01  # 1% of bankroll
+        
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=max(USD(0.10), min(max_bet, USD(1.0))),
+        )
+```
+
+### Moderate Approach
+
+```python
+# Scale with confidence
+class ModerateAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.5),
+                max_=USD(2.0),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            )
+        )
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        answer = self.make_prediction(market)
+        # Adjust confidence based on research quality
+        return answer
+```
+
+### Aggressive Approach
+
+```python
+# Larger bets for high-confidence predictions
+class AggressiveAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxExpectedValueBettingStrategy(
+            max_position_amount=USD(5.0),
+        )
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="High-Confidence Predictions" icon="medal">
+    When you have strong evidence and clear edges, MaxExpectedValue maximizes returns without complex Kelly calculations.
+  </Card>
+  
+  <Card title="Small Position Sizing" icon="coins">
+    Making many small bets to accumulate EV, similar to the o3-mini agent example.
+  </Card>
+  
+  <Card title="Tournament Play" icon="trophy">
+    Optimizing for total expected returns in competitions rather than growth rate.
+  </Card>
+  
+  <Card title="Testing New Models" icon="flask">
+    Starting with MaxExpectedValue and small bets when validating a new prediction model.
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Start Small">
+    Begin with small `max_position_amount` values (e.g., $0.50-$1.00) while validating your edge:
+    
+    ```python
+    MaxExpectedValueBettingStrategy(
+        max_position_amount=USD(0.5),
+    )
+    ```
+  </Step>
+  
+  <Step title="Track Performance">
+    Monitor your realized returns vs expected value. If actual returns significantly underperform EV calculations, your probability estimates may be off.
+  </Step>
+  
+  <Step title="Set Position Limits">
+    Always cap bet sizes as a fraction of your bankroll (e.g., 1-5% per bet):
+    
+    ```python
+    max_bet = min(USD(2.0), balance * 0.03)  # 3% max
+    ```
+  </Step>
+  
+  <Step title="Consider Switching to Kelly">
+    Once validated, consider moving to Kelly betting for optimal long-term growth and bankroll protection.
+  </Step>
+</Steps>
+
+## Limitations
+
+<AccordionGroup>
+  <Accordion title="No Variance Consideration">
+    MaxExpectedValue focuses on average returns and doesn't account for variance or drawdown risk. Long losing streaks are possible even with positive EV.
+  </Accordion>
+  
+  <Accordion title="Aggressive by Default">
+    The strategy tends to bet near maximum whenever positive EV is detected, which can be too aggressive if your edge is small or uncertain.
+  </Accordion>
+  
+  <Accordion title="Bankroll Management Required">
+    Unlike Kelly, this strategy doesn't automatically scale with your bankroll. You must implement position sizing limits yourself.
+  </Accordion>
+  
+  <Accordion title="Edge Estimation Errors">
+    If you overestimate your edge (probability accuracy), you'll consistently bet too much and can deplete your bankroll despite positive expected value.
+  </Accordion>
+</AccordionGroup>
+
+## Migration Path
+
+### From MaxExpectedValue to Kelly
+
+Once you've validated positive EV, migrate to Kelly for better risk management:
+
+```python
+# Before: MaxExpectedValue
+return MaxExpectedValueBettingStrategy(
+    max_position_amount=USD(2.0),
+)
+
+# After: Kelly with similar risk profile
+return FullBinaryKellyBettingStrategy(
+    max_position_amount=USD(2.0),
+    max_price_impact=0.5,
+)
+```
+
+Kelly will automatically:
+- Scale bets based on edge size
+- Protect against overbetting
+- Optimize for long-term growth
+- Reduce position sizes for uncertain predictions
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Kelly Betting Strategies" icon="chart-line" href="/api/betting/kelly-betting">
+    Optimal growth strategies with built-in risk management
+  </Card>
+  <Card title="Max Accuracy Strategies" icon="bullseye" href="/api/betting/max-accuracy">
+    Optimize for prediction accuracy over returns
+  </Card>
+  <Card title="Betting Strategies Concept" icon="book" href="/concepts/betting-strategies">
+    Learn fundamental betting strategy concepts
+  </Card>
+  <Card title="Risk Management" icon="shield-halved" href="/guides/deploying-agents">
+    Best practices for managing risk in production
+  </Card>
+</CardGroup>

@@ -1,0 +1,553 @@
+---
+title: AgentMarket
+description: Interface for accessing prediction market data including questions, probabilities, trading, and positions
+---
+
+## Overview
+
+`AgentMarket` is the core interface for interacting with prediction markets across different platforms. It provides a unified API for accessing market metadata, current probabilities, liquidity, trading operations, and position management.
+
+## Import
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+```
+
+## Basic Properties
+
+### Market Identity
+
+<ParamField path="id" type="str" required>
+  Unique identifier for the market
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  Direct URL to view the market on the platform
+</ParamField>
+
+<ParamField path="question" type="str" required>
+  The market's question or title
+</ParamField>
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    logger.info(f"Processing market: {market.question}")
+    logger.info(f"Market URL: {market.url}")
+    logger.info(f"Market ID: {market.id}")
+```
+
+### Market Outcomes
+
+<ParamField path="outcomes" type="list[str]" required>
+  List of possible outcomes (e.g., ["Yes", "No"] for binary markets)
+</ParamField>
+
+<ParamField path="probabilities" type="dict[str, Probability]" required>
+  Current probability for each outcome
+</ParamField>
+
+```python
+def analyze_market(self, market: AgentMarket) -> None:
+    # Access outcomes and probabilities
+    for outcome in market.outcomes:
+        prob = market.probabilities[outcome]
+        print(f"{outcome}: {prob:.2%}")
+    
+    # For binary markets
+    if len(market.outcomes) == 2:
+        yes_prob = market.probabilities["Yes"]
+        no_prob = market.probabilities["No"]
+```
+
+### Market Type
+
+<ParamField path="market_type" type="MarketType" required>
+  Platform where the market exists (OMEN, MANIFOLD, etc.)
+</ParamField>
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    if isinstance(market, OmenAgentMarket):
+        # Use Kelly criterion for Omen
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(5),
+            max_price_impact=0.7
+        )
+    else:
+        # Use conservative strategy for other platforms
+        return super().get_betting_strategy(market)
+```
+
+## Time Properties
+
+<ParamField path="created_time" type="datetime" required>
+  When the market was created
+</ParamField>
+
+<ParamField path="close_time" type="datetime | None">
+  When the market will close for trading
+</ParamField>
+
+<ParamField path="finalized_time" type="datetime | None">
+  When the market was finalized/resolved
+</ParamField>
+
+```python
+from datetime import timedelta
+from prediction_market_agent_tooling.tools.utils import utcnow, check_not_none
+
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Skip markets closing very soon
+    if market.close_time:
+        time_until_close = check_not_none(market.close_time) - utcnow()
+        if time_until_close < timedelta(hours=1):
+            logger.info(f"Market closes too soon: {market.url}")
+            return False
+    
+    # Only trade on recent markets
+    market_age = utcnow() - market.created_time
+    if market_age > timedelta(days=30):
+        return False
+    
+    return True
+```
+
+## Scalar Market Properties
+
+For numeric prediction markets:
+
+<ParamField path="lower_bound" type="float | None">
+  Minimum possible value
+</ParamField>
+
+<ParamField path="upper_bound" type="float | None">
+  Maximum possible value
+</ParamField>
+
+```python
+def answer_scalar_market(
+    self, 
+    market: AgentMarket
+) -> ScalarProbabilisticAnswer | None:
+    if market.upper_bound is None or market.lower_bound is None:
+        raise ValueError("Market upper and lower bounds must be set")
+    
+    logger.info(
+        f"Scalar market range: {market.lower_bound} to {market.upper_bound}"
+    )
+    
+    prediction = self.agent.predict_scalar(
+        market.question,
+        market.upper_bound,
+        market.lower_bound
+    )
+    return prediction.outcome_prediction
+```
+
+## Market Statistics
+
+### get_liquidity
+
+Get the current liquidity available in the market.
+
+```python
+def get_liquidity(self) -> TokenAmount:
+    pass
+```
+
+<ResponseField name="return" type="TokenAmount">
+  Current liquidity in the market's native token
+</ResponseField>
+
+```python
+from prediction_market_agent_tooling.gtypes import USD
+
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Require minimum liquidity
+    min_liquidity = market.get_in_token(USD(5))
+    
+    if market.get_liquidity() < min_liquidity:
+        logger.info(
+            f"Skipping market with low liquidity: {market.url}"
+        )
+        return False
+    
+    return True
+```
+
+### volume
+
+<ParamField path="volume" type="TokenAmount | None">
+  Total trading volume in the market
+</ParamField>
+
+```python
+def analyze_market_activity(self, market: AgentMarket) -> None:
+    if market.volume:
+        logger.info(f"Market volume: {market.volume}")
+        logger.info(f"Market liquidity: {market.get_liquidity()}")
+```
+
+## Trading Operations
+
+### get_trade_balance
+
+Get available balance for trading on this market.
+
+```python
+def get_trade_balance(self, api_keys: APIKeys) -> TokenAmount:
+    pass
+```
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys for accessing wallet/account
+</ParamField>
+
+<ResponseField name="return" type="TokenAmount">
+  Available balance in the market's token
+</ResponseField>
+
+```python
+from prediction_market_agent.utils import APIKeys
+
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    trading_balance = market.get_trade_balance(APIKeys())
+    
+    max_bet = get_maximum_possible_bet_amount(
+        min_=USD(1),
+        max_=USD(5),
+        trading_balance=trading_balance
+    )
+    
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=max_bet,
+        max_price_impact=0.7
+    )
+```
+
+### place_bet
+
+Execute a bet on the market.
+
+```python
+def place_bet(
+    self,
+    outcome: str,
+    amount: TokenAmount,
+    api_keys: APIKeys
+) -> None:
+    pass
+```
+
+<ParamField path="outcome" type="str" required>
+  The outcome to bet on (must be in `market.outcomes`)
+</ParamField>
+
+<ParamField path="amount" type="TokenAmount" required>
+  Amount to bet in the market's token
+</ParamField>
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys for executing the transaction
+</ParamField>
+
+```python
+# Note: Usually you don't call this directly - the framework handles it
+# But here's how it works internally:
+
+market.place_bet(
+    outcome="Yes",
+    amount=market.get_in_token(USD(2)),
+    api_keys=APIKeys()
+)
+```
+
+## Position Management
+
+### get_positions
+
+Get your current positions in this market.
+
+```python
+def get_positions(self, user_id: str) -> list[Position]:
+    pass
+```
+
+<ParamField path="user_id" type="str" required>
+  User identifier (address or account ID)
+</ParamField>
+
+<ResponseField name="return" type="list[Position]">
+  List of current positions in the market
+</ResponseField>
+
+```python
+from prediction_market_agent_tooling.markets.data_models import Position
+
+def analyze_existing_positions(self, market: AgentMarket) -> None:
+    user_id = market.get_user_id(api_keys=APIKeys())
+    positions = market.get_positions(user_id)
+    
+    for position in positions:
+        logger.info(
+            f"Outcome: {position.outcome}, "
+            f"Amount: {position.amounts[position.outcome]}"
+        )
+```
+
+### get_most_recent_trade_datetime
+
+Get the timestamp of the most recent trade by a user.
+
+```python
+def get_most_recent_trade_datetime(self, user_id: str) -> datetime | None:
+    pass
+```
+
+<ParamField path="user_id" type="str" required>
+  User identifier
+</ParamField>
+
+<ResponseField name="return" type="datetime | None">
+  Timestamp of most recent trade, or None if no trades
+</ResponseField>
+
+```python
+from prediction_market_agent_tooling.tools.utils import utcnow
+
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Check if we've traded recently on this market
+    user_id = market.get_user_id(api_keys=APIKeys())
+    last_trade = market.get_most_recent_trade_datetime(user_id=user_id)
+    
+    if last_trade is None:
+        return True  # Never traded, OK to trade
+    
+    # Skip if we traded within last 24 hours
+    time_since_trade = utcnow() - last_trade
+    if time_since_trade < timedelta(days=1):
+        logger.info(f"Recently traded on {market.url}, skipping")
+        return False
+    
+    return True
+```
+
+### get_user_id
+
+Get the user identifier for the current agent.
+
+```python
+def get_user_id(self, api_keys: APIKeys) -> str:
+    pass
+```
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys to derive user ID from
+</ParamField>
+
+<ResponseField name="return" type="str">
+  User identifier (wallet address or account ID)
+</ResponseField>
+
+```python
+def check_existing_position(self, market: AgentMarket) -> bool:
+    user_id = market.get_user_id(api_keys=APIKeys())
+    positions = market.get_positions(user_id)
+    return len(positions) > 0
+```
+
+## Resolution Status
+
+<ParamField path="resolution" type="str | None">
+  The resolved outcome if market is finalized, None otherwise
+</ParamField>
+
+```python
+def analyze_resolved_markets(self, markets: list[AgentMarket]) -> None:
+    resolved = [m for m in markets if m.resolution is not None]
+    
+    for market in resolved:
+        logger.info(
+            f"Market '{market.question}' resolved to: {market.resolution}"
+        )
+```
+
+## Token Conversion
+
+### get_in_token
+
+Convert an amount to the market's native token.
+
+```python
+def get_in_token(self, amount: TokenAmount) -> TokenAmount:
+    pass
+```
+
+<ParamField path="amount" type="TokenAmount" required>
+  Amount to convert (e.g., USD)
+</ParamField>
+
+<ResponseField name="return" type="TokenAmount">
+  Equivalent amount in market's token
+</ResponseField>
+
+```python
+from prediction_market_agent_tooling.gtypes import USD
+
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Require at least $10 liquidity
+    min_liquidity_usd = USD(10)
+    min_liquidity_native = market.get_in_token(min_liquidity_usd)
+    
+    if market.get_liquidity() < min_liquidity_native:
+        return False
+    
+    return True
+```
+
+## Fetching Markets
+
+### get_binary_markets
+
+Fetch binary (yes/no) markets from a platform.
+
+```python
+from prediction_market_agent_tooling.markets.markets import (
+    get_binary_markets,
+    MarketType,
+    FilterBy,
+    SortBy
+)
+
+markets = get_binary_markets(
+    limit=50,
+    market_type=MarketType.OMEN,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.NEWEST
+)
+```
+
+<ParamField path="limit" type="int" required>
+  Maximum number of markets to fetch
+</ParamField>
+
+<ParamField path="market_type" type="MarketType" required>
+  Platform to fetch from
+</ParamField>
+
+<ParamField path="filter_by" type="FilterBy" default="FilterBy.OPEN">
+  Filter criteria (OPEN, RESOLVED, etc.)
+</ParamField>
+
+<ParamField path="sort_by" type="SortBy" default="SortBy.NONE">
+  Sort order (NEWEST, HIGHEST_LIQUIDITY, etc.)
+</ParamField>
+
+## Filter and Sort Options
+
+### FilterBy
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import FilterBy
+
+FilterBy.OPEN          # Only open markets
+FilterBy.RESOLVED      # Only resolved markets  
+FilterBy.NONE          # No filtering
+```
+
+### SortBy
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import SortBy
+
+SortBy.NEWEST              # Newest markets first
+SortBy.HIGHEST_LIQUIDITY   # Highest liquidity first
+SortBy.CLOSING_SOONEST     # Closing soonest first
+SortBy.NONE                # No specific order
+```
+
+## Platform-Specific Implementations
+
+### OmenAgentMarket
+
+```python
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+if isinstance(market, OmenAgentMarket):
+    # Access Omen-specific properties
+    logger.info(f"Condition ID: {market.condition.id}")
+    logger.info(f"Collateral token: {market.collateral_token_contract_address_checksummed}")
+```
+
+## Complete Example
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import (
+    AgentMarket,
+    FilterBy,
+    SortBy
+)
+from prediction_market_agent_tooling.markets.markets import MarketType
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import USD, Probability
+from prediction_market_agent_tooling.tools.utils import utcnow
+from datetime import timedelta
+
+class MyMarketAgent(DeployableTraderAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 5
+    
+    def verify_market(
+        self, 
+        market_type: MarketType, 
+        market: AgentMarket
+    ) -> bool:
+        # Check liquidity
+        if market.get_liquidity() < market.get_in_token(USD(10)):
+            logger.info(f"Low liquidity: {market.url}")
+            return False
+        
+        # Check time until close
+        if market.close_time:
+            time_until_close = market.close_time - utcnow()
+            if time_until_close < timedelta(hours=2):
+                logger.info(f"Closing too soon: {market.url}")
+                return False
+        
+        # Check if already traded recently
+        user_id = market.get_user_id(api_keys=APIKeys())
+        last_trade = market.get_most_recent_trade_datetime(user_id)
+        if last_trade and (utcnow() - last_trade) < timedelta(days=1):
+            logger.info(f"Recently traded: {market.url}")
+            return False
+        
+        return True
+    
+    def answer_binary_market(
+        self, 
+        market: AgentMarket
+    ) -> ProbabilisticAnswer | None:
+        # Log market details
+        logger.info(f"Analyzing: {market.question}")
+        logger.info(f"Current probabilities: {market.probabilities}")
+        logger.info(f"Liquidity: {market.get_liquidity()}")
+        
+        # Your prediction logic
+        prediction = analyze_market(market)
+        
+        return ProbabilisticAnswer(
+            p_yes=prediction.probability,
+            confidence=prediction.confidence,
+            reasoning=prediction.reasoning
+        )
+```
+
+## See Also
+
+- [DeployableTraderAgent](/api/deployable-agent) - Base class for building agents
+- [ProbabilisticAnswer](/api/probabilistic-answer) - Prediction data models
+- [Market Filtering Guide](/guides/market-filtering) - Advanced market selection

@@ -1,0 +1,167 @@
+---
+title: DeployableCoinFlipAgent
+description: Random prediction agent for binary markets
+---
+
+## Overview
+
+The `DeployableCoinFlipAgent` is a simple agent that makes random binary predictions using a coin flip mechanism. This agent serves as a baseline for testing and comparison purposes.
+
+## Class: DeployableCoinFlipAgent
+
+A basic trading agent that randomly predicts market outcomes with 50/50 probability.
+
+### Inheritance
+
+```python
+DeployableCoinFlipAgent(DeployableTraderAgent)
+```
+
+### Methods
+
+#### verify_market
+
+```python
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool
+```
+
+Verifies if the agent should process a given market. This implementation accepts all markets.
+
+<ParamField path="market_type" type="MarketType">
+  The type of prediction market
+</ParamField>
+
+<ParamField path="market" type="AgentMarket">
+  The market to verify
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  Always returns `True`
+</ResponseField>
+
+#### answer_binary_market
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None
+```
+
+Generates a random prediction for a binary market by flipping a coin.
+
+<ParamField path="market" type="AgentMarket">
+  The market to predict on
+</ParamField>
+
+<ResponseField name="return" type="ProbabilisticAnswer | None">
+  A probabilistic answer with:
+  - `p_yes`: 0.0 or 1.0 (randomly chosen)
+  - `confidence`: 0.5
+  - `reasoning`: "I flipped a coin to decide."
+</ResponseField>
+
+## Class: DeployableCoinFlipAgentByHighestLiquidity
+
+An enhanced version of the coin flip agent that targets high-liquidity markets.
+
+### Inheritance
+
+```python
+DeployableCoinFlipAgentByHighestLiquidity(DeployableCoinFlipAgent)
+```
+
+### Configuration Properties
+
+<ParamField path="get_markets_sort_by" type="SortBy" default="SortBy.HIGHEST_LIQUIDITY">
+  Sorts markets by liquidity, targeting the most liquid markets first
+</ParamField>
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="2">
+  Number of markets to trade on per execution run
+</ParamField>
+
+<ParamField path="same_market_trade_interval" type="TradeInterval" default="FixedInterval(timedelta(days=14))">
+  Minimum time interval between trades on the same market (14 days)
+</ParamField>
+
+## Usage Examples
+
+### Basic CoinFlip Agent
+
+```python
+from prediction_market_agent.agents.coinflip_agent.deploy import DeployableCoinFlipAgent
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+# Initialize the agent
+agent = DeployableCoinFlipAgent()
+
+# Deploy locally for testing
+agent.deploy_local(
+    market_type=MarketType.OMEN,
+    sleep_time=180,  # 3 minutes
+)
+```
+
+### High Liquidity CoinFlip Agent
+
+```python
+from prediction_market_agent.agents.coinflip_agent.deploy import (
+    DeployableCoinFlipAgentByHighestLiquidity
+)
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+# Initialize the agent with liquidity targeting
+agent = DeployableCoinFlipAgentByHighestLiquidity()
+
+# Deploy to production
+agent.deploy(
+    market_type=MarketType.OMEN,
+    enable_langfuse=True,
+)
+```
+
+### Custom Configuration
+
+```python
+from prediction_market_agent.agents.coinflip_agent.deploy import DeployableCoinFlipAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+
+# Subclass for custom behavior
+class MyCoinFlipAgent(DeployableCoinFlipAgent):
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        # Only trade on markets with specific criteria
+        return market.volume > 100
+
+agent = MyCoinFlipAgent()
+agent.deploy_local(market_type=MarketType.OMEN)
+```
+
+## Implementation Details
+
+### Random Selection Mechanism
+
+The agent uses Python's `random.choice()` to make binary decisions:
+
+```python
+import random
+
+decision = random.choice([True, False])
+p_yes = Probability(float(decision))  # 0.0 or 1.0
+```
+
+### Source Location
+
+```
+prediction_market_agent/agents/coinflip_agent/deploy.py
+```
+
+## Use Cases
+
+1. **Baseline Testing**: Compare more sophisticated agents against random predictions
+2. **Market Activity**: Generate trading activity for testing market infrastructure
+3. **Control Group**: Use as a control in agent performance studies
+4. **Educational**: Simple example for understanding the agent architecture
+
+## Related
+
+- [AdvancedAgent](/api/agents/advanced-agent) - Evidence-based prediction agent
+- [DeployableTraderAgent](/api/core/trader-agent) - Base class for trading agents
+- [AgentMarket](/api/markets/agent-market) - Market interface

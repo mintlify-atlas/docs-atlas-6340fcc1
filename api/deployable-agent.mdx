@@ -1,0 +1,549 @@
+---
+title: DeployableTraderAgent
+description: Base class for creating automated prediction market trading agents with built-in market processing, betting strategies, and trade execution
+---
+
+## Overview
+
+`DeployableTraderAgent` is the core abstract base class from `prediction-market-agent-tooling` for building automated trading agents. It provides a complete framework for discovering markets, generating predictions, managing betting strategies, and executing trades across multiple prediction market platforms.
+
+## Import
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+```
+
+## Basic Usage
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import Probability
+
+class MyTradingAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Your prediction logic here
+        return ProbabilisticAnswer(
+            p_yes=Probability(0.65),
+            confidence=0.8,
+            reasoning="Analysis suggests 65% probability"
+        )
+```
+
+## Core Methods
+
+### answer_binary_market
+
+Generate a prediction for a binary (yes/no) market.
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    pass
+```
+
+<ParamField path="market" type="AgentMarket" required>
+  The market to analyze and predict
+</ParamField>
+
+<ResponseField name="return" type="ProbabilisticAnswer | None">
+  Your prediction with probability, confidence, and reasoning. Return `None` to skip the market.
+</ResponseField>
+
+**Example:**
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    # Run your analysis
+    prediction = self.agent.predict(market.question)
+    
+    return ProbabilisticAnswer(
+        p_yes=prediction.probability,
+        confidence=prediction.confidence,
+        reasoning=prediction.reasoning
+    )
+```
+
+### answer_categorical_market
+
+Generate a prediction for a categorical (multiple choice) market.
+
+```python
+def answer_categorical_market(
+    self, 
+    market: AgentMarket
+) -> CategoricalProbabilisticAnswer | None:
+    pass
+```
+
+<ParamField path="market" type="AgentMarket" required>
+  The categorical market to analyze
+</ParamField>
+
+<ResponseField name="return" type="CategoricalProbabilisticAnswer | None">
+  Probabilities for each outcome. Return `None` to skip the market.
+</ResponseField>
+
+**Example:**
+
+```python
+def answer_categorical_market(
+    self, 
+    market: AgentMarket
+) -> CategoricalProbabilisticAnswer | None:
+    prediction = self.agent.predict_categorical(
+        market.question, 
+        market.outcomes
+    )
+    return prediction.outcome_prediction
+```
+
+### answer_scalar_market
+
+Generate a prediction for a scalar (numeric range) market.
+
+```python
+def answer_scalar_market(
+    self, 
+    market: AgentMarket
+) -> ScalarProbabilisticAnswer | None:
+    pass
+```
+
+<ParamField path="market" type="AgentMarket" required>
+  The scalar market with upper and lower bounds
+</ParamField>
+
+<ResponseField name="return" type="ScalarProbabilisticAnswer | None">
+  Prediction within the market's defined range. Return `None` to skip.
+</ResponseField>
+
+**Example:**
+
+```python
+def answer_scalar_market(
+    self, 
+    market: AgentMarket
+) -> ScalarProbabilisticAnswer | None:
+    if market.upper_bound is None or market.lower_bound is None:
+        raise ValueError("Market bounds must be set")
+    
+    prediction = self.agent.predict_scalar(
+        market.question,
+        market.upper_bound,
+        market.lower_bound
+    )
+    return prediction.outcome_prediction
+```
+
+### verify_market
+
+Filter markets before processing. Override to implement custom market selection logic.
+
+```python
+def verify_market(
+    self, 
+    market_type: MarketType, 
+    market: AgentMarket
+) -> bool:
+    pass
+```
+
+<ParamField path="market_type" type="MarketType" required>
+  The type of market platform (OMEN, MANIFOLD, etc.)
+</ParamField>
+
+<ParamField path="market" type="AgentMarket" required>
+  The market to verify
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  `True` to process the market, `False` to skip it
+</ResponseField>
+
+**Example:**
+
+```python
+def verify_market(
+    self, 
+    market_type: MarketType, 
+    market: AgentMarket
+) -> bool:
+    # Only process markets with sufficient liquidity
+    if market.get_liquidity() < market.get_in_token(USD(5)):
+        logger.info(f"Skipping market with low liquidity: {market.url}")
+        return False
+    
+    # Skip saturated markets
+    if market_is_saturated(market):
+        logger.info(f"Skipping saturated market: {market.url}")
+        return False
+    
+    return True
+```
+
+### get_betting_strategy
+
+Customize betting behavior for each market.
+
+```python
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    pass
+```
+
+<ParamField path="market" type="AgentMarket" required>
+  The market being traded
+</ParamField>
+
+<ResponseField name="return" type="BettingStrategy">
+  Strategy controlling bet sizing and risk parameters
+</ResponseField>
+
+**Example:**
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    FullBinaryKellyBettingStrategy
+)
+
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=get_maximum_possible_bet_amount(
+            min_=USD(1),
+            max_=USD(5),
+            trading_balance=market.get_trade_balance(APIKeys())
+        ),
+        max_price_impact=0.7
+    )
+```
+
+### load
+
+Initialize agent resources before market processing begins.
+
+```python
+def load(self) -> None:
+    pass
+```
+
+**Example:**
+
+```python
+def load(self) -> None:
+    super().load()
+    
+    # Initialize your prediction model
+    self.agent = PredictionProphetAgent(
+        research_agent=Agent(OpenAIModel("gpt-4o")),
+        prediction_agent=Agent(OpenAIModel("gpt-4o")),
+        logger=logger
+    )
+    
+    # Set up any required caches or handlers
+    self.pinecone_handler = PineconeHandler()
+```
+
+### before_process_markets
+
+Run setup tasks before market processing starts.
+
+```python
+def before_process_markets(self, market_type: MarketType) -> None:
+    pass
+```
+
+<ParamField path="market_type" type="MarketType" required>
+  The market platform being processed
+</ParamField>
+
+**Example:**
+
+```python
+def before_process_markets(self, market_type: MarketType) -> None:
+    # Update vector database with latest markets
+    self.pinecone_handler.insert_all_omen_markets_if_not_exists()
+    super().before_process_markets(market_type=market_type)
+```
+
+### get_markets
+
+Retrieve and filter markets to process. Override for custom market selection.
+
+```python
+def get_markets(
+    self, 
+    market_type: MarketType
+) -> Sequence[AgentMarket]:
+    pass
+```
+
+<ParamField path="market_type" type="MarketType" required>
+  The market platform to fetch from
+</ParamField>
+
+<ResponseField name="return" type="Sequence[AgentMarket]">
+  List of markets to process
+</ResponseField>
+
+**Example:**
+
+```python
+from datetime import timedelta
+from prediction_market_agent_tooling.tools.utils import utcnow, check_not_none
+
+def get_markets(
+    self, 
+    market_type: MarketType
+) -> Sequence[AgentMarket]:
+    # Only process markets closing within 14 days
+    max_close_time = utcnow() + timedelta(days=14)
+    
+    markets = super().get_markets(market_type)
+    filtered_markets = [
+        m for m in markets 
+        if check_not_none(m.close_time) < max_close_time
+    ]
+    
+    return filtered_markets
+```
+
+## Configuration Attributes
+
+### bet_on_n_markets_per_run
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="1">
+  Maximum number of markets to trade on per execution
+</ParamField>
+
+```python
+class MyAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 4  # Trade on up to 4 markets per run
+```
+
+### n_markets_to_fetch
+
+<ParamField path="n_markets_to_fetch" type="int" default="50">
+  Number of markets to fetch from the platform
+</ParamField>
+
+```python
+class SkewAgent(DeployableTraderAgent):
+    n_markets_to_fetch = 1000  # Fetch many markets for filtering
+```
+
+### get_markets_sort_by
+
+<ParamField path="get_markets_sort_by" type="SortBy" default="SortBy.NONE">
+  Sort order for fetched markets
+</ParamField>
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import SortBy
+
+class NewMarketAgent(DeployableTraderAgent):
+    get_markets_sort_by = SortBy.NEWEST
+```
+
+### same_market_trade_interval
+
+<ParamField path="same_market_trade_interval" type="TradeInterval" default="Never">
+  Time interval between trades on the same market
+</ParamField>
+
+```python
+from datetime import timedelta
+from prediction_market_agent_tooling.deploy.trade_interval import FixedInterval
+
+class MyAgent(DeployableTraderAgent):
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+### supported_markets
+
+<ParamField path="supported_markets" type="list[MarketType]" default="All markets">
+  List of supported market platforms
+</ParamField>
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+class OmenOnlyAgent(DeployableTraderAgent):
+    supported_markets = [MarketType.OMEN]
+```
+
+### trade_on_markets_created_after
+
+<ParamField path="trade_on_markets_created_after" type="DatetimeUTC | None" default="None">
+  Only trade on markets created after this timestamp
+</ParamField>
+
+```python
+from prediction_market_agent_tooling.tools.utils import DatetimeUTC
+
+class RecentMarketsAgent(DeployableTraderAgent):
+    trade_on_markets_created_after = DatetimeUTC(2024, 10, 31, 0)
+```
+
+## Deployment
+
+### run
+
+Execute the agent's main trading loop.
+
+```python
+def run(self, market_type: MarketType) -> None:
+    pass
+```
+
+<ParamField path="market_type" type="MarketType" required>
+  The market platform to trade on
+</ParamField>
+
+**Example:**
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+agent = MyTradingAgent()
+agent.run(market_type=MarketType.OMEN)
+```
+
+### deploy_local
+
+Run the agent locally with continuous execution.
+
+```python
+def deploy_local(
+    self,
+    market_type: MarketType,
+    sleep_time: float,
+    run_time: float | None = None
+) -> None:
+    pass
+```
+
+<ParamField path="market_type" type="MarketType" required>
+  The market platform to trade on
+</ParamField>
+
+<ParamField path="sleep_time" type="float" required>
+  Seconds to sleep between runs
+</ParamField>
+
+<ParamField path="run_time" type="float | None" default="None">
+  Total runtime in seconds (None for infinite)
+</ParamField>
+
+**Example:**
+
+```python
+if __name__ == "__main__":
+    agent = MyTradingAgent(
+        place_trades=True,
+        store_predictions=True
+    )
+    agent.deploy_local(
+        market_type=MarketType.OMEN,
+        sleep_time=300,  # Run every 5 minutes
+        run_time=3600    # Run for 1 hour
+    )
+```
+
+## Constructor Parameters
+
+```python
+DeployableTraderAgent(
+    place_trades: bool = True,
+    store_predictions: bool = True,
+    store_trades: bool = True,
+    enable_langfuse: bool = True
+)
+```
+
+<ParamField path="place_trades" type="bool" default="True">
+  Whether to actually execute trades (False for dry-run mode)
+</ParamField>
+
+<ParamField path="store_predictions" type="bool" default="True">
+  Whether to store predictions to database
+</ParamField>
+
+<ParamField path="store_trades" type="bool" default="True">
+  Whether to store trade records to database
+</ParamField>
+
+<ParamField path="enable_langfuse" type="bool" default="True">
+  Enable Langfuse observability tracking
+</ParamField>
+
+## Complete Example
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    FullBinaryKellyBettingStrategy
+)
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.markets.markets import MarketType
+from prediction_market_agent_tooling.gtypes import USD, Probability
+from prediction_prophet.benchmark.agents import PredictionProphetAgent
+
+class MyPredictionAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+    
+    def load(self) -> None:
+        super().load()
+        # Initialize your prediction model
+        self.agent = PredictionProphetAgent(
+            research_agent=Agent(OpenAIModel("gpt-4o")),
+            prediction_agent=Agent(OpenAIModel("gpt-4o")),
+            logger=logger
+        )
+    
+    def verify_market(
+        self, 
+        market_type: MarketType, 
+        market: AgentMarket
+    ) -> bool:
+        # Only process markets with sufficient liquidity
+        if market.get_liquidity() < market.get_in_token(USD(10)):
+            return False
+        return True
+    
+    def answer_binary_market(
+        self, 
+        market: AgentMarket
+    ) -> ProbabilisticAnswer | None:
+        prediction = self.agent.predict(market.question)
+        
+        if prediction.outcome_prediction is None:
+            return None
+            
+        return prediction.outcome_prediction.to_probabilistic_answer()
+    
+    def get_betting_strategy(
+        self, 
+        market: AgentMarket
+    ) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(5),
+            max_price_impact=0.7
+        )
+
+if __name__ == "__main__":
+    agent = MyPredictionAgent()
+    agent.deploy_local(
+        market_type=MarketType.OMEN,
+        sleep_time=300
+    )
+```
+
+## See Also
+
+- [AgentMarket](/api/agent-market) - Market interface for accessing market data
+- [ProbabilisticAnswer](/api/probabilistic-answer) - Data models for predictions
+- [Betting Strategies](/guides/betting-strategies) - Configure bet sizing and risk

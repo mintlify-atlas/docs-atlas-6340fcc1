@@ -1,0 +1,101 @@
+---
+title: Introduction
+description: A library for building AI agents that interact with prediction markets using various frameworks and platforms
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="Gnosis Prediction Market Agent"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="Gnosis Prediction Market Agent"
+/>
+
+## Overview
+
+Gnosis Prediction Market Agent is a comprehensive library for exploring the landscape of AI agent frameworks through the lens of prediction market trading. Build agents that can research, analyze, and place bets on markets from multiple platforms.
+
+The library provides a unified interface for agents to interact with:
+
+- **Presagio (formerly Omen)** - Decentralized prediction markets on Gnosis Chain
+- **Manifold** - Play-money prediction markets
+- **Polymarket** - Cryptocurrency-based prediction markets  
+- **Metaculus** - Forecasting platform for future events
+
+These agents build on top of the prediction market APIs from [prediction-market-agent-tooling](https://github.com/gnosis/prediction-market-agent-tooling).
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card
+    title="Multiple agent frameworks"
+    icon="robot"
+  >
+    Explore different AI agent architectures including autonomous agents, microchain agents, prophet agents, and more
+  </Card>
+  <Card
+    title="Multi-platform support"
+    icon="diagram-project"
+  >
+    Deploy agents across Presagio, Manifold, Polymarket, and Metaculus with a unified interface
+  </Card>
+  <Card
+    title="Extensible architecture"
+    icon="puzzle-piece"
+  >
+    Easily create custom agents by subclassing DeployableTraderAgent with minimal code
+  </Card>
+  <Card
+    title="Production ready"
+    icon="cloud"
+  >
+    Deploy agents to cloud infrastructure with built-in monitoring and analytics
+  </Card>
+</CardGroup>
+
+## Interactive apps
+
+The library includes interactive Streamlit applications:
+
+- **Agent Research App** - Pick a prediction market question, or create your own, and select agents to perform research and make predictions. Deployed at [pma-agent.ai.gnosisdev.com](https://pma-agent.ai.gnosisdev.com)
+- **Autonomous Trader Agent** - An autonomous agent with function calling that can be guided by user input. Deployed at [autonomous-trader-agent.ai.gnosisdev.com](https://autonomous-trader-agent.ai.gnosisdev.com)
+
+## Live dashboard
+
+Track the on-chain activity of deployed agents on the [Dune Analytics dashboard](https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets).
+
+## Getting started
+
+<CardGroup cols={2}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Set up the project with Poetry and Python 3.11+
+  </Card>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Run your first agent in minutes with the coinflip example
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Configure environment variables for API keys and blockchain access
+  </Card>
+  <Card
+    title="Contributing"
+    icon="code-pull-request"
+    href="https://github.com/gnosis/prediction-market-agent/issues"
+  >
+    Check out issues and contribute to the project
+  </Card>
+</CardGroup>

@@ -1,0 +1,246 @@
+---
+title: AdvancedAgent
+description: Evidence-based prediction agent using web research and LLM analysis
+---
+
+## Overview
+
+The `AdvancedAgent` is a baseline agent that performs evidence-based predictions by searching Google, scraping web content, and analyzing it with an LLM. It represents the most basic approach to making informed predictions.
+
+## Class: AdvancedAgent
+
+A trading agent that combines web search, content scraping, and LLM analysis to generate probabilistic predictions.
+
+### Inheritance
+
+```python
+AdvancedAgent(DeployableTraderAgent)
+```
+
+### Configuration Properties
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="4">
+  Number of markets the agent will trade on per execution run
+</ParamField>
+
+### Methods
+
+#### answer_binary_market
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None
+```
+
+Generates a prediction for a binary market through a multi-step research process.
+
+<ParamField path="market" type="AgentMarket">
+  The market to predict on
+</ParamField>
+
+<ResponseField name="return" type="ProbabilisticAnswer | None">
+  A probabilistic answer containing:
+  - `p_yes`: Probability of the "yes" outcome (0.0 to 1.0)
+  - `confidence`: Confidence in the prediction (0.0 to 1.0)
+  - `reasoning`: "I asked Google and LLM to do it!"
+  
+  Returns `None` if no research results are found or content cannot be scraped.
+</ResponseField>
+
+## Prediction Workflow
+
+The agent follows a systematic research process:
+
+### 1. Google Search
+
+Searches Google for content related to the market question:
+
+```python
+google_results = search_google_serper(market.question)
+```
+
+- Uses the Serper API for search results
+- Filters out Manifold Markets results to avoid copying answers
+- Returns `None` if no results are found
+
+### 2. Web Scraping
+
+Scrapes the top 5 search results:
+
+```python
+contents = [
+    scraped[:10000]
+    for url in google_results[:5]
+    if (scraped := web_scrape(url))
+]
+```
+
+- Limits content to 10,000 characters per site
+- Converts web pages to markdown format
+- Returns `None` if no content can be extracted
+
+### 3. LLM Analysis
+
+Analyzes the scraped content using GPT-4o-mini:
+
+```python
+probability, confidence = llm(market.question, contents)
+```
+
+- Uses GPT-4o-mini with temperature 0.0 for consistent predictions
+- Provides current date context
+- Returns probability and confidence as float values
+
+## Helper Function: llm
+
+```python
+def llm(question: str, contents: list[str]) -> tuple[float, float]
+```
+
+Processes the research content and generates a prediction.
+
+<ParamField path="question" type="str">
+  The market question to predict on
+</ParamField>
+
+<ParamField path="contents" type="list[str]">
+  List of scraped web content (markdown format)
+</ParamField>
+
+<ResponseField name="return" type="tuple[float, float]">
+  A tuple containing:
+  - `probability`: Likelihood of the event occurring (0.0 to 1.0)
+  - `confidence`: Confidence in the prediction (0.0 to 1.0)
+</ResponseField>
+
+### LLM Configuration
+
+- **Model**: gpt-4o-mini
+- **System Prompt**: "You are professional prediction market trading agent."
+- **Temperature**: 0.0 (deterministic)
+- **Output Format**: "probability confidence" (space-separated floats)
+
+## Usage Examples
+
+### Basic Deployment
+
+```python
+from prediction_market_agent.agents.advanced_agent.deploy import AdvancedAgent
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+# Initialize the agent
+agent = AdvancedAgent()
+
+# Deploy locally
+agent.deploy_local(
+    market_type=MarketType.OMEN,
+    sleep_time=300,  # 5 minutes between runs
+)
+```
+
+### Production Deployment
+
+```python
+from prediction_market_agent.agents.advanced_agent.deploy import AdvancedAgent
+from prediction_market_agent_tooling.markets.markets import MarketType
+from prediction_market_agent.utils import APIKeys
+
+# Ensure API keys are configured
+api_keys = APIKeys()
+
+# Initialize and deploy
+agent = AdvancedAgent(
+    enable_langfuse=True,  # Enable observability
+    place_trades=True,
+)
+
+agent.deploy(
+    market_type=MarketType.OMEN,
+)
+```
+
+### Custom Betting Strategy
+
+```python
+from prediction_market_agent.agents.advanced_agent.deploy import AdvancedAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    BinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+
+class MyAdvancedAgent(AdvancedAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return BinaryKellyBettingStrategy(
+            max_position_amount=USD(5),
+            max_price_impact=0.7,
+        )
+
+agent = MyAdvancedAgent()
+agent.deploy_local(market_type=MarketType.OMEN)
+```
+
+## Required API Keys
+
+The AdvancedAgent requires the following API keys (configured via environment variables):
+
+<ParamField path="SERPER_API_KEY" type="str" required>
+  API key for Google search via Serper API
+</ParamField>
+
+<ParamField path="OPENAI_API_KEY" type="str" required>
+  OpenAI API key for GPT-4o-mini model
+</ParamField>
+
+## Limitations
+
+### Content Filtering
+
+- Filters out Manifold Markets results to avoid copying existing predictions
+- You may want to filter other prediction market sites depending on your use case
+
+### Context Window
+
+- Truncates each scraped page to 10,000 characters
+- May miss important information at the end of long articles
+
+### Single LLM Call
+
+- Makes only one LLM call for prediction
+- No iterative refinement or multi-step reasoning
+
+### Error Handling
+
+- Returns `None` if search fails
+- Returns `None` if web scraping fails
+- No fallback mechanisms
+
+## Performance Considerations
+
+### Baseline Agent
+
+This agent serves as a baseline for comparison:
+
+```python
+"""This is the most basic agent that should be actually able to do 
+some evidence-based predictions. Use as a baseline for comparing 
+with other agents."""
+```
+
+### Speed vs. Quality
+
+- Fast: Uses GPT-4o-mini (cheaper and faster)
+- Simple: Single-pass prediction without refinement
+- Basic: No advanced reasoning or multi-step analysis
+
+## Source Location
+
+```
+prediction_market_agent/agents/advanced_agent/deploy.py
+```
+
+## Related
+
+- [Prophet Agent](/api/agents/prophet-agent) - Advanced agent using PredictionProphet library
+- [Think Thoroughly Agent](/api/agents/think-thoroughly-agent) - Multi-step reasoning agent
+- [DeployableTraderAgent](/api/core/trader-agent) - Base class for trading agents
+- [Web Scraping Tools](/api/tools/web-scrape) - Content extraction utilities

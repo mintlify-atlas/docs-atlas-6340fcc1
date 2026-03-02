@@ -1,0 +1,418 @@
+---
+title: 'Metaculus Market API'
+description: 'API reference for Metaculus prediction platform integration'
+---
+
+## Overview
+
+Metaculus is a forecasting platform that focuses on important questions about science, technology, and global events. Unlike traditional prediction markets, Metaculus uses a scoring system to reward accurate forecasters. The Metaculus API provides access to tournaments and forecasting questions.
+
+## MarketType Enum
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+market_type = MarketType.METACULUS
+```
+
+## Market Class
+
+### MetaculusAgentMarket
+
+The `MetaculusAgentMarket` class extends `AgentMarket` and provides Metaculus-specific functionality.
+
+```python
+from prediction_market_agent_tooling.markets.metaculus.metaculus import (
+    MetaculusAgentMarket,
+)
+```
+
+## Core Methods
+
+### Get Markets
+
+Retrieve available forecasting questions from Metaculus.
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import FilterBy, SortBy
+
+markets = MetaculusAgentMarket.get_markets(
+    limit=100,
+    tournament_id=32506,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.NEWEST
+)
+```
+
+<ParamField path="limit" type="int">
+  Maximum number of questions to retrieve
+</ParamField>
+
+<ParamField path="tournament_id" type="int">
+  Specific tournament to fetch questions from
+</ParamField>
+
+<ParamField path="filter_by" type="FilterBy">
+  Filter questions by status (OPEN, RESOLVED, etc.)
+</ParamField>
+
+<ParamField path="sort_by" type="SortBy">
+  Sort order (NEWEST, etc.)
+</ParamField>
+
+<ResponseField name="markets" type="list[MetaculusAgentMarket]">
+  List of forecasting questions matching the query criteria
+</ResponseField>
+
+### Get Binary Market
+
+Retrieve a specific binary question by ID.
+
+```python
+market = MetaculusAgentMarket.get_binary_market(
+    id="question-id"
+)
+```
+
+<ParamField path="id" type="str" required>
+  Metaculus question ID
+</ParamField>
+
+<ResponseField name="market" type="MetaculusAgentMarket">
+  Question object containing details, resolution criteria, and metadata
+</ResponseField>
+
+### Submit Prediction
+
+Submit a forecast for a question.
+
+```python
+# Binary question prediction
+market.place_bet(
+    outcome="Yes",
+    amount=Probability(0.65)
+)
+```
+
+<ParamField path="outcome" type="str" required>
+  Outcome being predicted ("Yes" or "No" for binary questions)
+</ParamField>
+
+<ParamField path="amount" type="Probability" required>
+  Probability estimate (0.0 to 1.0)
+</ParamField>
+
+<Note>
+  Metaculus uses probability estimates rather than monetary amounts. Predictions are scored based on accuracy.
+</Note>
+
+## Market Data Model
+
+### Question Properties
+
+<ResponseField name="id" type="str">
+  Metaculus question ID
+</ResponseField>
+
+<ResponseField name="question" type="str">
+  The forecasting question text
+</ResponseField>
+
+<ResponseField name="description" type="str | None">
+  Detailed question description and background
+</ResponseField>
+
+<ResponseField name="fine_print" type="str | None">
+  Additional clarifications and edge cases
+</ResponseField>
+
+<ResponseField name="resolution_criteria" type="str | None">
+  Explicit criteria for how the question will be resolved
+</ResponseField>
+
+<ResponseField name="outcomes" type="list[str]">
+  Available outcomes (e.g., ["Yes", "No"] for binary questions)
+</ResponseField>
+
+<ResponseField name="p_yes" type="Probability">
+  Community median prediction for "Yes" outcome
+</ResponseField>
+
+<ResponseField name="close_time" type="DatetimeUTC | None">
+  When the question closes for predictions
+</ResponseField>
+
+<ResponseField name="created_time" type="DatetimeUTC | None">
+  When the question was created
+</ResponseField>
+
+<ResponseField name="url" type="str">
+  Direct link to the question on Metaculus
+</ResponseField>
+
+<ResponseField name="is_open" type="bool">
+  Whether the question is currently accepting predictions
+</ResponseField>
+
+<ResponseField name="have_predicted" type="bool">
+  Whether the current user has already predicted on this question
+</ResponseField>
+
+<ResponseField name="resolution" type="str | None">
+  Final resolution outcome (if resolved)
+</ResponseField>
+
+## Metaculus-Specific Features
+
+### Tournament Support
+
+Metaculus organizes questions into tournaments with specific themes.
+
+```python
+# AI Bot Tournament Q4
+TOURNAMENT_ID_Q4 = 32506
+
+markets = MetaculusAgentMarket.get_markets(
+    tournament_id=TOURNAMENT_ID_Q4,
+    filter_by=FilterBy.OPEN
+)
+```
+
+### Scoring System
+
+Metaculus uses scoring mechanisms to evaluate forecast accuracy:
+- **Brier Score**: Measures accuracy of probability estimates
+- **Peer Score**: Performance relative to other forecasters
+- **Baseline Score**: Performance vs. simple baselines
+
+### Repeat Predictions
+
+Forecasters can update predictions as new information becomes available.
+
+```python
+if not market.have_predicted or agent.repeat_predictions:
+    # Submit or update prediction
+    prediction = agent.answer_binary_market(market)
+```
+
+### Question Structure
+
+Metaculus questions include rich metadata:
+
+```python
+full_question = f"""Question: {market.question}
+Description: {market.description}
+Fine Print: {market.fine_print}
+Resolution Criteria: {market.resolution_criteria}"""
+```
+
+## Real-World Examples
+
+### Tournament Agent
+
+Dedicated agent for participating in Metaculus tournaments.
+
+```python
+from prediction_market_agent.agents.metaculus_agent.deploy import (
+    DeployableMetaculusBotTournamentAgent,
+)
+
+class DeployableMetaculusBotTournamentAgent(DeployablePredictionAgent):
+    bet_on_n_markets_per_run = sys.maxsize  # Predict on all available
+    dummy_prediction = False
+    repeat_predictions = False
+    tournament_id = 32506  # AI Bot Q4 tournament
+    supported_markets = [MarketType.METACULUS]
+
+    def get_markets(self, market_type: MarketType):
+        markets = MetaculusAgentMarket.get_markets(
+            limit=self.bet_on_n_markets_per_run,
+            tournament_id=self.tournament_id,
+            filter_by=FilterBy.OPEN,
+            sort_by=SortBy.NEWEST,
+        )
+        return markets
+
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        # Filter out if already predicted and not repeating
+        if not self.repeat_predictions and market.have_predicted:
+            return False
+        return True
+```
+
+### Comprehensive Prediction
+
+Use full question context for predictions.
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    assert isinstance(market, MetaculusAgentMarket)
+    
+    # Construct full question with all metadata
+    full_question = f"""Question: {market.question}
+Question's description: {market.description}
+Question's fine print: {market.fine_print}
+Question's resolution criteria: {market.resolution_criteria}"""
+    
+    # Make prediction using full context
+    prediction = self.agent.predict(full_question)
+    
+    return (
+        prediction.outcome_prediction.to_probabilistic_answer()
+        if prediction.outcome_prediction is not None
+        else None
+    )
+```
+
+### Integration with Prophet Agent
+
+```python
+from prediction_market_agent.agents.prophet_agent.deploy import (
+    DeployablePredictionProphetGPTo1PreviewAgent,
+)
+
+class MetaculusTournamentAgent(DeployablePredictionAgent):
+    def load(self) -> None:
+        # Use high-performing model for Metaculus
+        self.agent = DeployablePredictionProphetGPTo1PreviewAgent(
+            enable_langfuse=self.enable_langfuse
+        )
+    
+    def answer_binary_market(self, market: AgentMarket):
+        full_question = self.build_full_question(market)
+        prediction = self.agent.agent.predict(full_question)
+        return prediction.outcome_prediction.to_probabilistic_answer()
+```
+
+## Platform Details
+
+- **Type**: Forecasting platform (not a traditional prediction market)
+- **Currency**: Points-based scoring system
+- **Website**: https://www.metaculus.com
+- **Focus**: Science, technology, global events, AI
+- **Community**: Expert forecasters and researchers
+- **Resolution**: Rigorous resolution process by Metaculus team
+
+## Tournament IDs
+
+```python
+WARMUP_TOURNAMENT_ID = 3294
+TOURNAMENT_ID_Q3 = 3349  # AI Bot Q3
+TOURNAMENT_ID_Q4 = 32506 # AI Bot Q4
+```
+
+Access different tournaments:
+
+```python
+# AI Bot Tournament Q4
+markets = MetaculusAgentMarket.get_markets(
+    tournament_id=TOURNAMENT_ID_Q4
+)
+```
+
+## Question Types
+
+Metaculus supports various question types:
+- **Binary**: Yes/No questions
+- **Numeric**: Predicting a specific number
+- **Multiple Choice**: Selecting from options
+- **Date**: Predicting when something will occur
+
+## Prediction Strategy
+
+### Avoid Redundant Predictions
+
+```python
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    assert isinstance(market, MetaculusAgentMarket)
+    
+    # Skip if already predicted (unless configured to repeat)
+    if not self.repeat_predictions and market.have_predicted:
+        return False
+    
+    return True
+```
+
+### Free Predictions
+
+```python
+class MetaculusAgent(DeployablePredictionAgent):
+    # On Metaculus predictions are free
+    bet_on_n_markets_per_run = sys.maxsize
+```
+
+## Advantages
+
+- **High-Quality Questions**: Carefully curated forecasting questions
+- **Rich Context**: Detailed descriptions and resolution criteria
+- **Expert Community**: Skilled forecasters provide calibrated predictions
+- **No Cost**: Free to participate and make predictions
+- **Educational**: Learn from other forecasters
+- **Track Record**: Build reputation through accurate forecasting
+
+## Considerations
+
+### Not a Prediction Market
+
+Metaculus is a forecasting platform, not a traditional prediction market:
+- No monetary trading
+- Points-based scoring instead
+- Focus on accuracy over profit
+- Cannot "cash out" positions
+
+### Question Complexity
+
+Metaculus questions often require deep analysis:
+
+```python
+# Use complete question context
+full_question = f"""Question: {market.question}
+Description: {market.description}
+Fine Print: {market.fine_print}
+Resolution Criteria: {market.resolution_criteria}"""
+```
+
+### Update Frequency
+
+Allow repeat predictions to update forecasts:
+
+```python
+repeat_predictions = True  # Enable forecast updates
+```
+
+## Error Handling
+
+```python
+try:
+    market = MetaculusAgentMarket.get_binary_market(id=question_id)
+    
+    if not market.have_predicted or self.repeat_predictions:
+        prediction = self.answer_binary_market(market)
+        if prediction:
+            market.place_bet("Yes", prediction.p_yes)
+except Exception as e:
+    logger.error(f"Metaculus prediction failed: {e}")
+```
+
+## Running Agents
+
+```python
+# Run tournament agent
+python prediction_market_agent/run_agent.py \
+    metaculus_bot_tournament_agent \
+    metaculus
+```
+
+## Best Practices
+
+1. **Use Full Context**: Include description, fine print, and resolution criteria
+2. **Check Predicted Status**: Avoid duplicate predictions unless intended
+3. **Tournament Focus**: Participate in specific tournaments for consistency
+4. **Model Selection**: Use high-performing models for Metaculus complexity
+5. **Regular Updates**: Update predictions as new information emerges
+
+## See Also
+
+- [Omen Market API](/api/markets/omen)
+- [Manifold Market API](/api/markets/manifold)
+- [Polymarket Market API](/api/markets/polymarket)

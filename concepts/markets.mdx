@@ -1,0 +1,390 @@
+---
+title: "Supported Markets"
+description: "Understanding the prediction market platforms integrated with the agent framework"
+---
+
+## Overview
+
+The Gnosis Prediction Market Agent framework supports four major prediction market platforms. Each platform has unique characteristics, market types, and trading mechanisms.
+
+## Market Platforms
+
+<CardGroup cols={2}>
+  <Card title="Omen (Presagio)" icon="ethereum" color="#00c58e">
+    Decentralized prediction markets on Gnosis Chain
+  </Card>
+  <Card title="Polymarket" icon="chart-line" color="#7c3aed">
+    High-liquidity crypto prediction markets
+  </Card>
+  <Card title="Manifold" icon="dice" color="#4f46e5">
+    Play-money prediction markets with high volume
+  </Card>
+  <Card title="Metaculus" icon="brain" color="#0ea5e9">
+    Forecasting tournaments and community predictions
+  </Card>
+</CardGroup>
+
+## MarketType Enum
+
+Specify which platform to use when running your agent:
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+# Available market types
+MarketType.OMEN       # Omen/Presagio on Gnosis Chain
+MarketType.POLYMARKET # Polymarket
+MarketType.MANIFOLD   # Manifold Markets
+MarketType.METACULUS  # Metaculus
+```
+
+## Running Agents on Different Platforms
+
+When running your agent, specify the market type as a command-line argument:
+
+<CodeGroup>
+```bash Omen
+python prediction_market_agent/run_agent.py coinflip omen
+```
+
+```bash Polymarket
+python prediction_market_agent/run_agent.py prophet_gpt4o polymarket
+```
+
+```bash Manifold
+python prediction_market_agent/run_agent.py advanced_agent manifold
+```
+
+```bash Metaculus
+python prediction_market_agent/run_agent.py metaculus_bot_tournament_agent metaculus
+```
+</CodeGroup>
+
+## Platform Comparison
+
+<table>
+  <thead>
+    <tr>
+      <th>Platform</th>
+      <th>Currency</th>
+      <th>Blockchain</th>
+      <th>Market Types</th>
+      <th>Best For</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>**Omen**</td>
+      <td>xDAI, USDC</td>
+      <td>Gnosis Chain</td>
+      <td>Binary, Categorical, Scalar</td>
+      <td>Decentralized trading, low fees</td>
+    </tr>
+    <tr>
+      <td>**Polymarket**</td>
+      <td>USDC</td>
+      <td>Polygon</td>
+      <td>Binary</td>
+      <td>High liquidity, real-money trading</td>
+    </tr>
+    <tr>
+      <td>**Manifold**</td>
+      <td>Mana (play money)</td>
+      <td>Off-chain</td>
+      <td>Binary, Multiple choice</td>
+      <td>Testing, experimentation, high volume</td>
+    </tr>
+    <tr>
+      <td>**Metaculus**</td>
+      <td>Points</td>
+      <td>Off-chain</td>
+      <td>Binary, Continuous</td>
+      <td>Forecasting tournaments, research</td>
+    </tr>
+  </tbody>
+</table>
+
+## The AgentMarket Interface
+
+All market platforms expose a unified `AgentMarket` interface:
+
+```python
+class AgentMarket:
+    id: str                    # Unique market identifier
+    question: str              # The question being predicted
+    outcomes: list[str]        # Possible outcomes
+    p_yes: Probability         # Current probability of YES
+    p_no: Probability          # Current probability of NO
+    volume: float             # Total trading volume
+    close_time: DatetimeUTC   # When the market closes
+    total_liquidity: float    # Available liquidity
+    
+    def get_trade_balance(self, api_keys: APIKeys) -> USD:
+        """Get available balance for trading"""
+        ...
+    
+    def place_bet(self, amount: USD, outcome: bool) -> None:
+        """Place a bet on this market"""
+        ...
+```
+
+## Platform-Specific Features
+
+### Omen (Presagio)
+
+<Accordion title="Key Features">
+- Fully decentralized on Gnosis Chain
+- Support for binary, categorical, and scalar markets
+- On-chain settlement via Reality.eth oracle
+- GraphQL API for market data
+- Low transaction fees (~$0.01)
+</Accordion>
+
+<Accordion title="Market Discovery">
+```python
+from prediction_market_agent_tooling.markets.omen.omen_subgraph_handler import (
+    OmenSubgraphHandler,
+    SortBy,
+    FilterBy,
+)
+
+# Fetch Omen markets
+handler = OmenSubgraphHandler()
+markets = handler.get_omen_markets_simple(
+    limit=10,
+    sort_by=SortBy.CLOSING_SOONEST,
+    filter_by=FilterBy.OPEN,
+)
+```
+</Accordion>
+
+<Accordion title="Required API Keys">
+```bash .env
+BET_FROM_PRIVATE_KEY=0x...  # Private key for trading wallet
+```
+</Accordion>
+
+### Polymarket
+
+<Accordion title="Key Features">
+- High liquidity and trading volume
+- Real money (USDC) trading
+- Wide range of topics (politics, crypto, sports)
+- CLOB (Central Limit Order Book) trading
+- Historical market data via GraphQL
+</Accordion>
+
+<Accordion title="Agent Example">
+The Berlin1PolySentAgent uses sentiment analysis and historical data:
+
+```python
+class Berlin1PolySentAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Search for information
+        urls = search_google_serper(market.question)
+        contents = scrape_and_split_urls(urls)
+        
+        # Extract sentiment
+        sentiment = extract_sentiment(contents)
+        
+        # Get Polymarket history
+        history_data = get_polymarket_history(market.question)
+        history_summary = summarize_history(history_data)
+        
+        # Generate prediction
+        probability, confidence = llm(
+            market.question, contents, history_summary, sentiment
+        )
+        
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+        )
+```
+</Accordion>
+
+### Manifold Markets
+
+<Accordion title="Key Features">
+- Play money (Mana) - no real money risk
+- High volume of diverse markets
+- Fast iteration and experimentation
+- Community-driven questions
+- Ideal for testing agent strategies
+</Accordion>
+
+<Accordion title="Best Practices">
+- Filter out self-referential markets (markets about Manifold itself)
+- Use for testing before deploying to real-money platforms
+- High volume means more opportunities to trade
+- Lower stakes mean higher risk tolerance
+</Accordion>
+
+### Metaculus
+
+<Accordion title="Key Features">
+- Tournament-style forecasting competitions
+- Point-based reputation system
+- Expert forecaster community
+- Questions often have longer time horizons
+- Emphasis on calibration and accuracy
+</Accordion>
+
+<Accordion title="Specialized Agent">
+The Metaculus bot tournament agent targets specific competitions:
+
+```python
+class DeployableMetaculusBotTournamentAgent(DeployableTraderAgent):
+    supported_markets = [MarketType.METACULUS]
+    
+    def get_markets(
+        self,
+        market_type: MarketType,
+    ) -> Sequence[AgentMarket]:
+        # Fetch tournament-specific markets
+        return get_tournament_markets(
+            sort_by=SortBy.NEWEST,
+        )
+```
+</Accordion>
+
+## Market Sorting and Filtering
+
+### SortBy Options
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import SortBy
+
+class MyAgent(DeployableTraderAgent):
+    # Choose your sorting preference
+    get_markets_sort_by = SortBy.CLOSING_SOONEST  # Default
+    # get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    # get_markets_sort_by = SortBy.NEWEST
+    # get_markets_sort_by = SortBy.NONE
+```
+
+<AccordionGroup>
+  <Accordion title="SortBy.CLOSING_SOONEST">
+    Prioritize markets that close soon. Good for:
+    - Capturing value before resolution
+    - Time-sensitive predictions
+    - Maximizing capital efficiency
+  </Accordion>
+  
+  <Accordion title="SortBy.HIGHEST_LIQUIDITY">
+    Target markets with most liquidity. Good for:
+    - Minimizing price impact
+    - Larger bet sizes
+    - More efficient trading
+    
+    ```python
+    class GPTRHighestLiquidityAgent(GPTRAgent):
+        get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+        bet_on_n_markets_per_run = 2
+    ```
+  </Accordion>
+  
+  <Accordion title="SortBy.NEWEST">
+    Focus on newly created markets. Good for:
+    - Capturing early mispricings
+    - Markets starting at 50/50
+    - First-mover advantage
+    
+    ```python
+    class SkewAgent(DeployableTraderAgent):
+        get_markets_sort_by = SortBy.NEWEST
+        bet_on_n_markets_per_run = 1000
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Limiting to Specific Platforms
+
+Restrict your agent to certain platforms:
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+class OmenOnlyAgent(DeployableTraderAgent):
+    supported_markets = [MarketType.OMEN]
+    
+    # This agent will only run on Omen markets
+```
+
+## Custom Market Selection
+
+For advanced use cases, override market selection entirely:
+
+```python
+class MarketCreatorsStalkerAgent(DeployableTraderAgent):
+    """Only bet on markets from specific creators"""
+    
+    WHITELISTED_CREATORS = [
+        Web3.to_checksum_address("0xa7E93F5A0e718bDDC654e525ea668c64Fd572882"),
+    ]
+    
+    def get_markets(
+        self,
+        market_type: MarketType,
+        sort_by: SortBy = SortBy.CLOSING_SOONEST,
+        filter_by: FilterBy = FilterBy.OPEN,
+    ) -> Sequence[OmenAgentMarket]:
+        return [
+            OmenAgentMarket.from_data_model(m)
+            for m in OmenSubgraphHandler().get_omen_markets_simple(
+                limit=self.n_markets_to_fetch,
+                sort_by=sort_by,
+                filter_by=filter_by,
+                creator_in=self.WHITELISTED_CREATORS,
+            )
+        ]
+```
+
+## Market Data and Analytics
+
+Access market information in your predictions:
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    # Check market properties
+    if market.volume < 1000:
+        logger.info(f"Skipping low-volume market: {market.question}")
+        return None
+    
+    if market.total_liquidity < 100:
+        logger.info(f"Insufficient liquidity: {market.question}")
+        return None
+    
+    # Check time until close
+    time_until_close = market.close_time - utcnow()
+    if time_until_close < timedelta(hours=1):
+        logger.info(f"Market closing too soon: {market.question}")
+        return None
+    
+    # Current market prices
+    logger.info(f"Current price: YES={market.p_yes}, NO={market.p_no}")
+    
+    # Your prediction logic here
+    ...
+```
+
+## Multi-Platform Strategies
+
+<Tip>
+  Some agents work across all platforms, while others are specialized. Design your agent based on your goals:
+  
+  - **Universal agents**: Test on Manifold, deploy to Omen/Polymarket
+  - **Platform-specific**: Optimize for one platform's unique features
+  - **Arbitrage agents**: Monitor prices across multiple platforms
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Architecture" icon="robot" href="/concepts/agents">
+    Build your first trading agent
+  </Card>
+  <Card title="Betting Strategies" icon="calculator" href="/concepts/betting-strategies">
+    Learn about Kelly criterion and bet sizing
+  </Card>
+</CardGroup>

@@ -1,0 +1,249 @@
+---
+title: "Agent Architecture"
+description: "Understanding the DeployableTraderAgent base class and how to build prediction market agents"
+---
+
+## Overview
+
+All trading agents in this framework inherit from the `DeployableTraderAgent` base class provided by the [prediction-market-agent-tooling](https://github.com/gnosis/prediction-market-agent-tooling) library. This base class provides a standardized interface for interacting with multiple prediction market platforms.
+
+## The DeployableTraderAgent Class
+
+The `DeployableTraderAgent` is the foundation for all prediction market trading agents. It handles:
+
+- Market discovery and filtering
+- Trade execution and position management
+- Rate limiting and trade intervals
+- Multi-platform support (Omen, Manifold, Polymarket, Metaculus)
+
+## Core Methods
+
+Every agent must implement specific methods to define its trading behavior:
+
+### answer_binary_market()
+
+The primary method that generates predictions for binary markets. This is where your agent's logic lives.
+
+<CodeGroup>
+```python Simple Example
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import Probability
+import random
+
+class DeployableCoinFlipAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+```
+
+```python Advanced Example
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+
+class AdvancedAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 4
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Search for results on Google
+        google_results = search_google_serper(market.question)
+        # Filter out Manifold results
+        google_results = [url for url in google_results if "manifold" not in url]
+        
+        if not google_results:
+            return None
+            
+        # Scrape and analyze content
+        contents = [
+            scraped[:10000]
+            for url in google_results[:5]
+            if (scraped := web_scrape(url))
+        ]
+        
+        if not contents:
+            return None
+            
+        # Use LLM to analyze
+        probability, confidence = llm(market.question, contents)
+
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+            reasoning="I asked Google and LLM to do it!",
+        )
+```
+</CodeGroup>
+
+### verify_market() (Optional)
+
+Filter markets before processing them. Return `False` to skip a market.
+
+```python
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Example: Only bet on markets with sufficient liquidity
+    if market.total_liquidity < 100:
+        return False
+    return True
+```
+
+### get_betting_strategy() (Optional)
+
+Define how much to bet on each market. See the [Betting Strategies](/concepts/betting-strategies) page for details.
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    SimpleBinaryKellyBettingStrategy,
+)
+
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    return SimpleBinaryKellyBettingStrategy(
+        max_position_amount=USD(3.3),
+    )
+```
+
+## Configuration Properties
+
+Agents can override class properties to customize behavior:
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="1">
+  Number of markets to trade on each execution
+</ParamField>
+
+<ParamField path="get_markets_sort_by" type="SortBy" default="SortBy.CLOSING_SOONEST">
+  How to sort available markets:
+  - `SortBy.CLOSING_SOONEST` - Markets closing soon first
+  - `SortBy.HIGHEST_LIQUIDITY` - Most liquid markets first
+  - `SortBy.NEWEST` - Recently created markets first
+</ParamField>
+
+<ParamField path="same_market_trade_interval" type="TradeInterval" default="FixedInterval(days=7)">
+  How often to trade on the same market. See [Trade Intervals](/concepts/trade-intervals) for details.
+</ParamField>
+
+<ParamField path="supported_markets" type="list[MarketType]" default="All markets">
+  Limit which market platforms your agent supports
+</ParamField>
+
+## Complete Example: Liquidity-Focused Agent
+
+Here's a complete agent that targets high-liquidity markets and trades frequently:
+
+```python
+from datetime import timedelta
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.trade_interval import (
+    FixedInterval,
+    TradeInterval,
+)
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket, SortBy
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import Probability
+import random
+
+class DeployableCoinFlipAgentByHighestLiquidity(DeployableTraderAgent):
+    # Configuration
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval: TradeInterval = FixedInterval(timedelta(days=14))
+    
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        # Accept all markets
+        return True
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+```
+
+## Running Your Agent
+
+Once you've created an agent, add it to `run_agent.py`:
+
+```python
+from enum import Enum
+from prediction_market_agent.agents.your_agent.deploy import YourAgent
+
+class RunnableAgent(str, Enum):
+    your_agent = "your_agent"
+
+RUNNABLE_AGENTS: dict[RunnableAgent, type[DeployableAgent]] = {
+    RunnableAgent.your_agent: YourAgent,
+}
+```
+
+Then run it:
+
+```bash
+python prediction_market_agent/run_agent.py your_agent omen
+```
+
+<Info>
+  See the [Quickstart](/quickstart) guide for complete setup instructions and the [Markets](/concepts/markets) page to learn about supported market platforms.
+</Info>
+
+## Agent Lifecycle
+
+1. **Load**: Agent initializes (optional `load()` method)
+2. **Get Markets**: Fetch available markets based on sorting and filtering
+3. **Verify**: Check each market with `verify_market()`
+4. **Answer**: Generate predictions with `answer_binary_market()`
+5. **Calculate Bet**: Determine bet size using betting strategy
+6. **Execute**: Place trades on the market
+7. **Sleep**: Wait for next run based on trade intervals
+
+## Advanced Patterns
+
+### Custom Market Fetching
+
+Override `get_markets()` for complete control:
+
+```python
+def get_markets(
+    self,
+    market_type: MarketType,
+    sort_by: SortBy = SortBy.CLOSING_SOONEST,
+    filter_by: FilterBy = FilterBy.OPEN,
+) -> Sequence[AgentMarket]:
+    # Custom market fetching logic
+    markets = super().get_markets(market_type)
+    # Filter to only markets closing within 14 days
+    max_close_time = utcnow() + timedelta(days=14)
+    return [m for m in markets if m.close_time < max_close_time]
+```
+
+### Stateful Agents
+
+Use the `load()` method to initialize state:
+
+```python
+def load(self) -> None:
+    """Called once when agent starts"""
+    super().load()
+    # Load historical data, models, etc.
+    self.model = load_my_model()
+    self.historical_data = fetch_historical_data()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Markets" icon="chart-line" href="/concepts/markets">
+    Learn about supported market platforms
+  </Card>
+  <Card title="Betting Strategies" icon="calculator" href="/concepts/betting-strategies">
+    Optimize your bet sizing with Kelly criterion
+  </Card>
+  <Card title="Trade Intervals" icon="clock" href="/concepts/trade-intervals">
+    Control when your agent trades on markets
+  </Card>
+</CardGroup>

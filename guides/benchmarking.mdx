@@ -1,0 +1,570 @@
+---
+title: Benchmarking Agents
+description: Learn how to benchmark your prediction market agents against human traders and evaluate performance
+---
+
+## Overview
+
+Before deploying your agent to production, it's crucial to evaluate its performance. The benchmarking system allows you to test your agent against real prediction markets where humans are trading, providing a reliable measure of accuracy without risking real funds.
+
+## Why Benchmark?
+
+<CardGroup cols={2}>
+  <Card title="Validate Accuracy" icon="check-circle">
+    Measure your agent's prediction accuracy against resolved markets
+  </Card>
+  
+  <Card title="Compare Performance" icon="chart-line">
+    See how your agent stacks up against human traders
+  </Card>
+  
+  <Card title="Fast Iteration" icon="rocket">
+    Test changes quickly without waiting for real markets to resolve
+  </Card>
+  
+  <Card title="Risk-Free Testing" icon="shield-check">
+    Evaluate performance without spending money on bets
+  </Card>
+</CardGroup>
+
+## Benchmark Script
+
+The `scripts/simple_benchmark.py` script fetches markets from Manifold (where humans trade) and runs your agents against them to generate a performance report.
+
+### Script Overview
+
+```python scripts/simple_benchmark.py
+import typing as t
+from datetime import timedelta
+
+import typer
+from prediction_market_agent_tooling.benchmark.agents import AbstractBenchmarkedAgent
+from prediction_market_agent_tooling.benchmark.benchmark import Benchmarker
+from prediction_market_agent_tooling.benchmark.utils import Prediction
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.gtypes import (
+    HexBytes,
+    OutcomeStr,
+    OutcomeToken,
+    Probability,
+)
+from prediction_market_agent_tooling.markets.agent_market import FilterBy, SortBy
+from prediction_market_agent_tooling.markets.data_models import (
+    CategoricalProbabilisticAnswer,
+    ProbabilisticAnswer,
+)
+from prediction_market_agent_tooling.markets.markets import (
+    FilterBy,
+    MarketType,
+    SortBy,
+    get_binary_markets,
+)
+from prediction_market_agent_tooling.markets.omen.data_models import Condition
+from prediction_market_agent_tooling.markets.omen.omen import (
+    MarketFees,
+    OmenAgentMarket,
+)
+from prediction_market_agent_tooling.markets.omen.omen_contracts import (
+    WrappedxDaiContract,
+)
+from prediction_market_agent_tooling.tools.utils import utcnow
+from web3 import Web3
+
+from prediction_market_agent.agents.advanced_agent.deploy import AdvancedAgent
+from prediction_market_agent.agents.coinflip_agent.deploy import DeployableCoinFlipAgent
+
+
+def main(
+    n: int = 10,
+    output: str = "./benchmark_report.md",
+    cache_path: t.Optional[str] = None,
+    only_cached: bool = False,
+) -> None:
+    markets = get_binary_markets(
+        n, MarketType.MANIFOLD, filter_by=FilterBy.OPEN, sort_by=SortBy.NONE
+    )
+    markets_deduplicated = list(({m.question: m for m in markets}.values()))
+
+    print(f"Found {len(markets_deduplicated)} markets.")
+
+    benchmarker = Benchmarker(
+        markets=markets_deduplicated,
+        agents=[
+            BenchmarkAgent(agent=AdvancedAgent()),
+            BenchmarkAgent(agent=DeployableCoinFlipAgent()),
+        ],
+        cache_path=cache_path,
+        only_cached=only_cached,
+    )
+
+    benchmarker.run_agents()
+    md = benchmarker.generate_markdown_report()
+
+    with open(output, "w") as f:
+        print(f"Writing benchmark report to: {output}")
+        f.write(md)
+
+
+class BenchmarkAgent(AbstractBenchmarkedAgent):
+    def __init__(self, agent: DeployableTraderAgent) -> None:
+        super().__init__(agent_name=agent.__class__.__name__, max_workers=1)
+        self.agent = agent
+
+    def predict(self, market_question: str) -> Prediction:
+        try:
+            output = self.agent.answer_binary_market(
+                market=OmenAgentMarket(
+                    question=market_question,
+                    # Rest of the fields are dummy values for benchmarking
+                    id="id",
+                    creator="creator",
+                    outcomes=[OutcomeStr("Yes"), OutcomeStr("No")],
+                    probabilities={
+                        OutcomeStr("Yes"): Probability(0.5),
+                        OutcomeStr("No"): Probability(0.5),
+                    },
+                    collateral_token_contract_address_checksummed=WrappedxDaiContract().address,
+                    market_maker_contract_address_checksummed=Web3.to_checksum_address(
+                        "0xf3318C420e5e30C12786C4001D600e9EE1A7eBb1"
+                    ),
+                    created_time=utcnow() - timedelta(days=1),
+                    close_time=utcnow(),
+                    resolution=None,
+                    condition=Condition(id=HexBytes("0x123"), outcomeSlotCount=2),
+                    url="url",
+                    volume=None,
+                    finalized_time=None,
+                    fees=MarketFees.get_zero_fees(bet_proportion=0.02),
+                    outcome_token_pool={
+                        OutcomeStr("Yes"): OutcomeToken(1000),
+                        OutcomeStr("No"): OutcomeToken(1000),
+                    },
+                )
+            )
+        except ValueError as e:
+            print(f"Failed to predict for market by {self.agent_name}: {e}")
+            output = None
+        if output is None:
+            print(
+                f"Failed to predict for market by {self.agent_name}: {market_question}"
+            )
+            return Prediction()
+        return Prediction(
+            is_predictable=True,
+            outcome_prediction=CategoricalProbabilisticAnswer.from_probabilistic_answer(
+                ProbabilisticAnswer(
+                    p_yes=output.p_yes,
+                    confidence=output.confidence,
+                )
+            ),
+        )
+
+
+if __name__ == "__main__":
+    typer.run(main)
+```
+
+## Running Benchmarks
+
+### Basic Usage
+
+Run a benchmark with 10 markets:
+
+```bash
+python scripts/simple_benchmark.py --n 10
+```
+
+### Command Line Options
+
+<ParamField path="n" type="int" default="10">
+  Number of markets to fetch and test against
+</ParamField>
+
+<ParamField path="output" type="str" default="./benchmark_report.md">
+  Output path for the markdown report
+</ParamField>
+
+<ParamField path="cache-path" type="str" default="None">
+  Path to cache predictions for faster re-runs
+</ParamField>
+
+<ParamField path="only-cached" type="bool" default="False">
+  Only use cached predictions, don't make new ones
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Standard Benchmark
+# Test on 10 markets, save to default location
+python scripts/simple_benchmark.py --n 10
+```
+
+```bash Large Benchmark
+# Test on 100 markets for more reliable statistics
+python scripts/simple_benchmark.py --n 100 --output ./large_benchmark.md
+```
+
+```bash Cached Benchmark
+# Cache results for faster iteration
+python scripts/simple_benchmark.py --n 50 --cache-path ./cache.json
+
+# Re-run using cached results
+python scripts/simple_benchmark.py --n 50 --cache-path ./cache.json --only-cached
+```
+</CodeGroup>
+
+## Adding Your Agent
+
+To benchmark your custom agent, modify the `benchmarker` initialization in `simple_benchmark.py`:
+
+<Steps>
+  <Step title="Import Your Agent">
+    ```python
+    from prediction_market_agent.agents.your_agent.deploy import YourCustomAgent
+    ```
+  </Step>
+  
+  <Step title="Add to Benchmarker">
+    ```python
+    benchmarker = Benchmarker(
+        markets=markets_deduplicated,
+        agents=[
+            BenchmarkAgent(agent=AdvancedAgent()),
+            BenchmarkAgent(agent=DeployableCoinFlipAgent()),
+            BenchmarkAgent(agent=YourCustomAgent()),  # Add your agent
+        ],
+        cache_path=cache_path,
+        only_cached=only_cached,
+    )
+    ```
+  </Step>
+  
+  <Step title="Run Benchmark">
+    ```bash
+    python scripts/simple_benchmark.py --n 20
+    ```
+  </Step>
+</Steps>
+
+## Understanding the Report
+
+The benchmark generates a markdown report with detailed statistics:
+
+### Sample Report Structure
+
+```markdown
+# Benchmark Report
+
+## Summary
+
+| Agent | Accuracy | Confidence | Markets |
+|-------|----------|------------|----------|
+| AdvancedAgent | 65.0% | 0.72 | 20 |
+| DeployableCoinFlipAgent | 50.0% | 0.50 | 20 |
+| YourCustomAgent | 70.0% | 0.68 | 20 |
+
+## Detailed Results
+
+### Market: Will Bitcoin reach $100k by end of 2024?
+
+**Resolution**: Yes
+
+| Agent | Prediction | Confidence | Correct |
+|-------|-----------|------------|----------|
+| AdvancedAgent | 72% Yes | 0.75 | ✅ |
+| CoinFlipAgent | 50% Yes | 0.50 | ✅ |
+| YourCustomAgent | 85% Yes | 0.80 | ✅ |
+
+...
+```
+
+### Key Metrics
+
+<AccordionGroup>
+  <Accordion title="Accuracy">
+    Percentage of markets where your agent's prediction was correct. 
+    
+    **Calculation**: Correct predictions / Total predictions
+    
+    **Target**: >50% (better than random), >60% (good), >70% (excellent)
+  </Accordion>
+  
+  <Accordion title="Confidence">
+    Average confidence level of your agent's predictions.
+    
+    **Range**: 0.0 to 1.0
+    
+    **Insight**: High confidence with low accuracy suggests overconfidence; low confidence with high accuracy suggests your agent is too conservative.
+  </Accordion>
+  
+  <Accordion title="Markets">
+    Number of markets your agent provided predictions for.
+    
+    **Note**: If lower than total markets, your agent returned `None` for some questions.
+  </Accordion>
+</AccordionGroup>
+
+## Evaluation Methods
+
+### 1. Benchmark Against Manifold
+
+The standard approach - test against Manifold markets where humans trade:
+
+```bash
+python scripts/simple_benchmark.py --n 10
+```
+
+**Pros:**
+- Fast feedback
+- No cost
+- Compare against human traders
+
+**Cons:**
+- Limited to resolved markets
+- May not reflect Omen market characteristics
+
+### 2. Live Trading with Small Bets
+
+Deploy your agent with tiny bets to evaluate on real markets:
+
+```python
+class YourTestAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 5
+    # Don't implement get_betting_strategy() to use tiny default bets
+```
+
+**Pros:**
+- Tests on actual target platform (Omen)
+- Real market conditions
+- Builds trading history
+
+**Cons:**
+- Slower feedback (days to weeks)
+- Costs real money (but minimal)
+- Requires deployed infrastructure
+
+### 3. Manual Observation
+
+Watch your agent's reasoning on specific questions:
+
+```python
+from prediction_market_agent.agents.your_agent.deploy import YourAgent
+
+agent = YourAgent()
+result = agent.answer_binary_market(test_market)
+
+print(f"Prediction: {result.p_yes}")
+print(f"Confidence: {result.confidence}")
+print(f"Reasoning: {result.reasoning}")
+```
+
+**Pros:**
+- Deep insight into agent's logic
+- Helps debug issues
+- Can use Streamlit app for interactive testing
+
+**Cons:**
+- Time-consuming
+- Not statistically significant
+- Subjective evaluation
+
+## Benchmarking Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Multiple Sizes" icon="ruler">
+    Run benchmarks with 10, 50, and 100 markets to ensure consistency
+  </Card>
+  
+  <Card title="Use Caching" icon="database">
+    Cache results when iterating to avoid redundant API calls
+  </Card>
+  
+  <Card title="Track Over Time" icon="chart-line">
+    Keep benchmark reports to monitor improvements
+  </Card>
+  
+  <Card title="Compare Baselines" icon="scale-balanced">
+    Always include simple agents like CoinFlip for reference
+  </Card>
+  
+  <Card title="Diverse Markets" icon="globe">
+    Test on markets from different categories and time periods
+  </Card>
+  
+  <Card title="Check Confidence" icon="gauge">
+    High accuracy with low confidence may indicate your agent could bet more
+  </Card>
+</CardGroup>
+
+## Interpreting Results
+
+### What's a Good Score?
+
+<AccordionGroup>
+  <Accordion title="50-55% Accuracy">
+    **Status**: Slightly better than random
+    
+    **Action**: Your agent has potential but needs improvement. Focus on:
+    - Better data sources
+    - Improved prompt engineering
+    - More context for predictions
+  </Accordion>
+  
+  <Accordion title="55-60% Accuracy">
+    **Status**: Decent performance
+    
+    **Action**: Deploy with small bets to test on live markets. Look for:
+    - Specific market types where you excel
+    - Opportunities to improve confidence calibration
+  </Accordion>
+  
+  <Accordion title="60-70% Accuracy">
+    **Status**: Good performance
+    
+    **Action**: Deploy to production with Kelly betting strategy. This range indicates:
+    - Strong prediction capability
+    - Potential for profitability
+    - Ready for larger bet sizes
+  </Accordion>
+  
+  <Accordion title="70%+ Accuracy">
+    **Status**: Excellent performance
+    
+    **Action**: Deploy aggressively and optimize for scale. Consider:
+    - Increasing bet_on_n_markets_per_run
+    - Raising maximum bet amounts
+    - Sharing insights with community
+  </Accordion>
+</AccordionGroup>
+
+### Cost-Benefit Analysis
+
+Calculate if your agent will be profitable:
+
+```python
+# Example calculation
+accuracy = 0.65  # 65% accuracy
+avg_bet = 2.00  # $2 average bet
+markets_per_day = 4
+api_cost_per_prediction = 0.10  # OpenAI + Tavily costs
+gas_per_transaction = 0.02  # Gnosis Chain gas
+
+# Expected daily profit
+expected_return = accuracy * avg_bet * markets_per_day
+costs = (api_cost_per_prediction + gas_per_transaction) * markets_per_day
+daily_profit = expected_return - avg_bet * markets_per_day - costs
+
+print(f"Expected daily profit: ${daily_profit:.2f}")
+```
+
+## Advanced Benchmarking
+
+### Custom Market Selection
+
+Test on specific market types:
+
+```python
+# Modify simple_benchmark.py
+def main(n: int = 10, category: str = "crypto"):
+    all_markets = get_binary_markets(
+        n * 2, MarketType.MANIFOLD, filter_by=FilterBy.RESOLVED
+    )
+    
+    # Filter for specific category
+    markets = [
+        m for m in all_markets 
+        if category.lower() in m.question.lower()
+    ][:n]
+    
+    # Rest of benchmark...
+```
+
+### Time-Based Analysis
+
+Evaluate performance on recent vs. older markets:
+
+```python
+from datetime import datetime, timedelta
+
+def benchmark_by_time_period():
+    recent_markets = get_binary_markets(
+        20, MarketType.MANIFOLD, 
+        created_after=datetime.now() - timedelta(days=30)
+    )
+    
+    older_markets = get_binary_markets(
+        20, MarketType.MANIFOLD,
+        created_after=datetime.now() - timedelta(days=90),
+        created_before=datetime.now() - timedelta(days=30)
+    )
+    
+    # Run separate benchmarks
+```
+
+### Confidence Calibration
+
+Check if your confidence levels match actual accuracy:
+
+```python
+# After running benchmark, analyze results
+results = [
+    {"confidence": 0.8, "correct": True},
+    {"confidence": 0.6, "correct": True},
+    {"confidence": 0.7, "correct": False},
+    # ...
+]
+
+# Group by confidence buckets
+for conf_min, conf_max in [(0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9)]:
+    bucket = [r for r in results if conf_min <= r["confidence"] < conf_max]
+    accuracy = sum(r["correct"] for r in bucket) / len(bucket)
+    avg_conf = sum(r["confidence"] for r in bucket) / len(bucket)
+    print(f"Confidence {conf_min}-{conf_max}: "
+          f"Predicted {avg_conf:.2f}, Actual {accuracy:.2f}")
+```
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Agent timing out on benchmark">
+    **Cause**: Agent takes too long to make predictions
+    
+    **Solution**:
+    - Reduce number of web searches
+    - Use faster LLM models
+    - Implement timeout handling
+    - Cache intermediate results
+  </Accordion>
+  
+  <Accordion title="Low accuracy on benchmark but good on live markets">
+    **Cause**: Manifold markets differ from Omen markets
+    
+    **Solution**:
+    - Focus on live market evaluation
+    - Filter Manifold markets to match Omen characteristics
+    - Use both methods for comprehensive evaluation
+  </Accordion>
+  
+  <Accordion title="Agent returns None for many markets">
+    **Cause**: `verify_market()` or prediction logic rejecting markets
+    
+    **Solution**:
+    - Review market filtering logic
+    - Check for API errors
+    - Ensure data sources are accessible
+    - Add better error handling
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Production" icon="rocket" href="/guides/deploying-agents">
+    Ready to go live? Deploy your agent
+  </Card>
+  
+  <Card title="Hackathon Guide" icon="trophy" href="/guides/hackathon">
+    Building for a hackathon? Check the quickstart
+  </Card>
+</CardGroup>

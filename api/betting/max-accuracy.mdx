@@ -1,0 +1,552 @@
+---
+title: "Max Accuracy Strategies"
+description: "API reference for accuracy-focused betting strategies that optimize for prediction accuracy metrics"
+---
+
+## Overview
+
+Max accuracy betting strategies prioritize prediction accuracy over profit maximization. These strategies are ideal for tournaments, reputation building, benchmarking, and situations where accuracy metrics matter more than monetary returns.
+
+<Info>
+  Use accuracy-focused strategies when optimizing for prediction quality, Brier scores, or leaderboard rankings rather than maximizing profits.
+</Info>
+
+## When to Use
+
+Choose max accuracy strategies when:
+- Participating in prediction tournaments or competitions
+- Building reputation on prediction platforms
+- Benchmarking model performance
+- Testing prediction quality with minimal capital risk
+- Optimizing for accuracy metrics (e.g., Brier score, calibration)
+
+<Warning>
+  Accuracy strategies may underperform profit-maximizing strategies like Kelly in terms of monetary returns.
+</Warning>
+
+## CategoricalMaxAccuracyBettingStrategy
+
+Minimalist betting strategy that focuses purely on prediction accuracy. Works for both binary and categorical markets.
+
+### Import
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    CategoricalMaxAccuracyBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+```
+
+### Usage
+
+<CodeGroup>
+```python Fixed Small Bets
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+
+class AccuracyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=USD(1.0),
+        )
+```
+
+```python Many Small Bets
+class SkewAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # Divide bankroll across many small bets for statistical validity
+        max_position_amount = max(
+            USD(0.01), 
+            market.get_trade_balance(self.api_keys) / 100
+        )
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=max_position_amount,
+        )
+```
+
+```python Dynamic Sizing
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class DeepSeekAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(6.5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            )
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position.
+  
+  **Common patterns:**
+  - `USD(0.01)` - Minimal capital risk, maximum number of predictions
+  - `USD(1.0)` - Standard accuracy testing
+  - `balance / 100` - Ensure at least 100 predictions for statistical significance
+  - `USD(5.0)+` - Higher stakes accuracy competitions
+</ParamField>
+
+### How It Works
+
+The strategy:
+1. Places small, consistent bets regardless of odds or edge
+2. Bets on the outcome with highest predicted probability
+3. Uses uniform position sizing for clean accuracy metrics
+4. Prioritizes making predictions on many markets
+
+<Tip>
+  For statistical validity, aim for at least 30-100 predictions. Use `balance / 100` to ensure sufficient market coverage.
+</Tip>
+
+### Real-World Examples
+
+<AccordionGroup>
+  <Accordion title="SkewAgent (Volume Strategy)">
+    Divides bankroll across 100+ tiny bets to leverage statistical patterns:
+    
+    ```python
+    class SkewAgent(DeployableTraderAgent):
+        # Process up to 1000 markets
+        n_markets_to_fetch = 1000
+        bet_on_n_markets_per_run = 1000
+        
+        def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+            # Ensure at least 100 trades for statistics
+            max_position_amount = max(
+                USD(0.01),  # Minimum $0.01 per bet
+                market.get_trade_balance(self.api_keys) / 100
+            )
+            return CategoricalMaxAccuracyBettingStrategy(
+                max_position_amount=max_position_amount,
+            )
+    ```
+    
+    **Use case:** Exploiting market-wide skew patterns (e.g., "Yes" outcomes are more common) with minimal capital risk per prediction.
+    
+    **Location:** `prediction_market_agent/agents/skew_agent/deploy.py:79`
+  </Accordion>
+  
+  <Accordion title="DeployablePredictionProphetDeepSeekR1">
+    Uses accuracy strategy for DeepSeek R1 model testing:
+    
+    ```python
+    class DeployablePredictionProphetDeepSeekR1(DeployableTraderAgent):
+        model = "deepseek/deepseek-r1"
+        
+        def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+            return CategoricalMaxAccuracyBettingStrategy(
+                max_position_amount=get_maximum_possible_bet_amount(
+                    min_=USD(1),
+                    max_=USD(6.5),
+                    trading_balance=market.get_trade_balance(APIKeys()),
+                )
+            )
+    ```
+    
+    **Use case:** Testing a new model's prediction accuracy with moderate position sizes before committing to profit-maximizing strategies.
+    
+    **Location:** `prediction_market_agent/agents/prophet_agent/deploy.py:390`
+  </Accordion>
+</AccordionGroup>
+
+## MaxAccuracyWithKellyScaledBetsStrategy
+
+Hybrid strategy that optimizes for accuracy while scaling bet sizes using Kelly criterion principles. Combines the best of both approaches.
+
+### Import
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    MaxAccuracyWithKellyScaledBetsStrategy,
+)
+```
+
+### Usage
+
+<CodeGroup>
+```python Basic Usage
+class HybridAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxAccuracyWithKellyScaledBetsStrategy(
+            max_position_amount=USD(5.0),
+        )
+```
+
+```python Dynamic Sizing
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class Berlin2Agent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxAccuracyWithKellyScaledBetsStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(6),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position. Kelly scaling will adjust bets below this limit based on edge and confidence.
+</ParamField>
+
+### How It Works
+
+This strategy:
+1. Identifies the outcome with highest predicted accuracy
+2. Scales bet size using Kelly-inspired calculations
+3. Accounts for edge magnitude (how much your prediction differs from market)
+4. Caps bets at `max_position_amount`
+
+**Benefits over CategoricalMaxAccuracy:**
+- Variable bet sizing based on conviction
+- Better capital efficiency
+- Still optimizes for accuracy metrics
+- Reduces risk on uncertain predictions
+
+**Benefits over pure Kelly:**
+- Maintains focus on accuracy over pure profit
+- More conservative bet sizing
+- Better for reputation and leaderboards
+
+### Real-World Example
+
+#### Berlin2OpenaiSearchAgentVariable
+
+Uses OpenAI's search API with o3-mini reasoning, optimized for accuracy with Kelly scaling:
+
+```python
+from openai import OpenAI
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    MaxAccuracyWithKellyScaledBetsStrategy,
+)
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class Berlin2OpenaiSearchAgentVariable(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return MaxAccuracyWithKellyScaledBetsStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(6),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+        )
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Uses gpt-4o for research + o3-mini for reasoning
+        # ... implementation details ...
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+        )
+```
+
+**Location:** `prediction_market_agent/agents/berlin2_agent/openai_search_agent_variable.py:19`
+
+**Use case:** Two-stage prediction pipeline (research + reasoning) where accuracy matters but bet sizing should reflect confidence levels.
+
+<Info>
+  This agent combines GPT-4o's research capabilities with o3-mini's reasoning, using accuracy-focused betting with Kelly scaling.
+</Info>
+
+## Strategy Comparison
+
+<AccordionGroup>
+  <Accordion title="CategoricalMaxAccuracyBettingStrategy">
+    **Best for:**
+    - Pure accuracy metrics
+    - High-volume prediction strategies
+    - Statistical analysis (uniform bet sizing)
+    - Minimal capital risk
+    - Testing new models
+    
+    **Characteristics:**
+    - Uniform bet sizing
+    - Simple implementation
+    - Maximum number of predictions
+    - Clean accuracy measurement
+    
+    **Example use:**
+    ```python
+    # Make 100+ predictions with minimal risk each
+    max_position = market.balance / 100
+    return CategoricalMaxAccuracyBettingStrategy(
+        max_position_amount=max(USD(0.01), max_position)
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="MaxAccuracyWithKellyScaledBetsStrategy">
+    **Best for:**
+    - Accuracy optimization with variable confidence
+    - Reputation building with better capital efficiency
+    - Competitions where both accuracy and returns matter
+    - Moderate risk tolerance
+    
+    **Characteristics:**
+    - Variable bet sizing
+    - Kelly-inspired scaling
+    - Better capital efficiency
+    - Accounts for edge magnitude
+    
+    **Example use:**
+    ```python
+    # Scale bets 1-6 USD based on confidence and edge
+    return MaxAccuracyWithKellyScaledBetsStrategy(
+        max_position_amount=get_maximum_possible_bet_amount(
+            min_=USD(1),
+            max_=USD(6),
+            trading_balance=balance,
+        )
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Kelly Betting (for comparison)">
+    **Best for:**
+    - Maximizing long-term growth
+    - Profit optimization
+    - Production deployment
+    - Risk-managed betting
+    
+    **Characteristics:**
+    - Optimal growth rate
+    - Large bets on big edges
+    - Automatically protects bankroll
+    - May sacrifice accuracy metrics
+    
+    **Example use:**
+    ```python
+    # Optimize for profit, not accuracy
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=USD(10),
+        max_price_impact=0.7,
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Accuracy Metrics
+
+When using accuracy strategies, track these metrics:
+
+### Brier Score
+
+```python
+# Lower is better (0 = perfect predictions, 1 = worst)
+import numpy as np
+
+def brier_score(predictions: list[float], outcomes: list[bool]) -> float:
+    """Calculate Brier score for probabilistic predictions."""
+    return np.mean([(p - int(o)) ** 2 for p, o in zip(predictions, outcomes)])
+
+# Example
+predictions = [0.7, 0.4, 0.9, 0.5]
+outcomes = [True, False, True, True]
+score = brier_score(predictions, outcomes)  # Lower is better
+```
+
+### Accuracy Rate
+
+```python
+def accuracy_rate(predictions: list[float], outcomes: list[bool]) -> float:
+    """Simple accuracy: did the higher probability outcome occur?"""
+    correct = sum(1 for p, o in zip(predictions, outcomes)
+                  if (p > 0.5 and o) or (p <= 0.5 and not o))
+    return correct / len(predictions)
+```
+
+### Calibration
+
+For CategoricalMaxAccuracy with uniform bets, check if your predicted probabilities match actual outcomes:
+
+```python
+# Example: predictions at 0.7 should resolve True ~70% of the time
+# Perfect calibration means predicted probabilities match empirical frequencies
+```
+
+<Tip>
+  Aim for at least 30-100 predictions before evaluating accuracy metrics for statistical significance.
+</Tip>
+
+## Integration Patterns
+
+### Testing Then Optimizing
+
+Start with accuracy strategy, migrate to profit optimization:
+
+```python
+class EvolvingAgent(DeployableTraderAgent):
+    testing_mode: bool = True  # Set via config
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        if self.testing_mode:
+            # Test accuracy with minimal risk
+            return CategoricalMaxAccuracyBettingStrategy(
+                max_position_amount=USD(0.5),
+            )
+        else:
+            # Optimize for profit after validation
+            return FullBinaryKellyBettingStrategy(
+                max_position_amount=USD(5.0),
+                max_price_impact=0.7,
+            )
+```
+
+### Confidence-Based Strategy Selection
+
+Use different strategies based on prediction confidence:
+
+```python
+class AdaptiveAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # This will be called before betting, so confidence from
+        # answer_binary_market can be used in custom logic
+        return MaxAccuracyWithKellyScaledBetsStrategy(
+            max_position_amount=USD(5.0),
+        )
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        answer = self.make_prediction(market)
+        
+        # Could extend to choose strategy based on confidence
+        # But note: get_betting_strategy is called once per market
+        
+        return answer
+```
+
+### Volume Strategy
+
+Optimize for maximum predictions with minimal capital per bet:
+
+```python
+class VolumeAgent(DeployableTraderAgent):
+    n_markets_to_fetch = 1000
+    bet_on_n_markets_per_run = 1000
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # Ensure 100+ predictions possible
+        balance = market.get_trade_balance(self.api_keys)
+        max_bet = max(USD(0.01), balance / 100)
+        
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=max_bet,
+        )
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Define Your Goal">
+    Clarify whether you're optimizing for:
+    - Accuracy metrics (Brier score, calibration)
+    - Leaderboard ranking
+    - Model benchmarking
+    - Reputation building
+  </Step>
+  
+  <Step title="Choose Appropriate Strategy">
+    - **Pure accuracy focus:** `CategoricalMaxAccuracyBettingStrategy`
+    - **Accuracy + efficiency:** `MaxAccuracyWithKellyScaledBetsStrategy`
+  </Step>
+  
+  <Step title="Set Position Sizes">
+    For statistical validity:
+    ```python
+    # Aim for 100+ predictions
+    max_position = max(USD(0.01), balance / 100)
+    ```
+  </Step>
+  
+  <Step title="Track Metrics">
+    Log predictions and outcomes to calculate:
+    - Brier score
+    - Accuracy rate
+    - Calibration
+    - Profit/loss (even if not primary goal)
+  </Step>
+  
+  <Step title="Consider Migration">
+    Once accuracy is validated, consider migrating to Kelly betting for better returns:
+    ```python
+    # After proving accuracy, optimize for profit
+    return FullBinaryKellyBettingStrategy(...)
+    ```
+  </Step>
+</Steps>
+
+## Limitations
+
+<Warning>
+  Accuracy strategies deliberately sacrifice profit potential for prediction quality.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Lower Expected Returns">
+    Uniform or conservative bet sizing means you won't fully capitalize on large edges. Expected profits are lower than Kelly strategies.
+  </Accordion>
+  
+  <Accordion title="Capital Inefficiency">
+    Small fixed bets tie up capital that could be earning more in Kelly-optimized strategies. Opportunity cost can be significant.
+  </Accordion>
+  
+  <Accordion title="May Not Win Profit Leaderboards">
+    If the competition ranks by total profit, accuracy strategies will underperform aggressive Kelly betting.
+  </Accordion>
+  
+  <Accordion title="Requires Volume">
+    Need many predictions (30-100+) for meaningful accuracy metrics. Not suitable for low-volume strategies.
+  </Accordion>
+</AccordionGroup>
+
+## When to Switch Strategies
+
+Migrate from accuracy to profit optimization when:
+
+1. **Validated accuracy**: You've demonstrated good prediction quality (e.g., Brier score < 0.15)
+2. **Sufficient data**: You have 50-100+ predictions showing consistent performance
+3. **Going to production**: Moving from testing to real capital deployment
+4. **Competition focus changes**: Tournament shifts from accuracy to profit rankings
+
+```python
+# Migration example
+# Before (testing)
+return CategoricalMaxAccuracyBettingStrategy(
+    max_position_amount=USD(0.5),
+)
+
+# After (production)
+return FullBinaryKellyBettingStrategy(
+    max_position_amount=USD(5.0),
+    max_price_impact=0.7,
+)
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Kelly Betting Strategies" icon="chart-line" href="/api/betting/kelly-betting">
+    Profit-optimizing strategies for production use
+  </Card>
+  <Card title="Max Expected Value" icon="sack-dollar" href="/api/betting/max-expected-value">
+    Maximize expected returns per bet
+  </Card>
+  <Card title="Betting Strategies Concept" icon="book" href="/concepts/betting-strategies">
+    Learn betting strategy fundamentals
+  </Card>
+  <Card title="Benchmarking Guide" icon="chart-mixed" href="/guides/benchmarking">
+    How to benchmark and evaluate agent performance
+  </Card>
+</CardGroup>

@@ -1,0 +1,543 @@
+---
+title: Docker Deployment
+description: Containerize and run agents using Docker for consistent, portable deployments
+---
+
+## Overview
+
+Docker deployment packages the agent and all its dependencies into a container image, ensuring consistent behavior across different environments. This is the recommended approach for production deployments.
+
+## Dockerfile Architecture
+
+The project uses a multi-stage Docker build for optimal image size and build caching:
+
+### Build Strategy
+
+```mermaid
+graph TD
+    A[Builder Stage] --> B[Install Poetry]
+    B --> C[Create Virtual Env]
+    C --> D[Install Dependencies]
+    D --> E[Runtime Stage]
+    E --> F[Copy Virtual Env]
+    F --> G[Copy Source Code]
+    G --> H[Final Image]
+```
+
+### Multi-Stage Build
+
+The Dockerfile uses two stages:
+
+<Steps>
+  <Step title="Builder Stage">
+    Installs Poetry and creates the virtual environment with all dependencies:
+    
+    ```dockerfile
+    FROM --platform=linux/amd64 python:3.11.9-bookworm AS builder
+    
+    RUN pip install poetry==1.8.2
+    
+    ENV POETRY_NO_INTERACTION=1 \
+        POETRY_VIRTUALENVS_IN_PROJECT=1 \
+        POETRY_VIRTUALENVS_CREATE=1 \
+        POETRY_CACHE_DIR=/tmp/poetry_cache
+    
+    WORKDIR /app
+    
+    COPY pyproject.toml poetry.lock ./
+    
+    RUN --mount=type=cache,target=$POETRY_CACHE_DIR poetry install --no-root
+    ```
+  </Step>
+
+  <Step title="Runtime Stage">
+    Creates a minimal runtime image with only the virtual environment and source code:
+    
+    ```dockerfile
+    FROM --platform=linux/amd64 python:3.11.9-bookworm AS runtime
+    
+    RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
+    
+    ENV VIRTUAL_ENV=/app/.venv \
+        PATH="/app/.venv/bin:$PATH"
+    
+    WORKDIR /app
+    
+    COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+    
+    COPY pyproject.toml poetry.lock ./
+    COPY prediction_market_agent prediction_market_agent
+    COPY scripts scripts
+    COPY tests tests
+    COPY tokenizers tokenizers
+    ```
+  </Step>
+</Steps>
+
+## Building the Image
+
+### Basic Build
+
+Build the Docker image from the project root:
+
+```bash
+docker build -t gnosis-prediction-agent .
+```
+
+### Build with Cache
+
+The Dockerfile uses Docker's cache mount for faster builds:
+
+```bash
+docker build \
+  --cache-from gnosis-prediction-agent:latest \
+  -t gnosis-prediction-agent:latest \
+  .
+```
+
+### Build with Version Tag
+
+Tag your builds with version numbers for better tracking:
+
+```bash
+docker build \
+  --build-arg LANGFUSE_DEPLOYMENT_VERSION=$(git rev-parse HEAD) \
+  -t gnosis-prediction-agent:v1.0.0 \
+  .
+```
+
+## Running Containers
+
+### Basic Run
+
+Run a container with environment variables:
+
+```bash
+docker run \
+  -e BET_FROM_PRIVATE_KEY="your_private_key" \
+  -e OPENAI_API_KEY="your_openai_key" \
+  -e runnable_agent_name="prophet_gpt4o" \
+  -e market_type="omen" \
+  gnosis-prediction-agent:latest
+```
+
+### Run with Environment File
+
+Use a `.env` file for cleaner configuration:
+
+```bash
+docker run --env-file .env gnosis-prediction-agent:latest
+```
+
+<Warning>
+Never commit your `.env` file to version control. Keep it in `.gitignore`.
+</Warning>
+
+### Interactive Mode
+
+Run a container with an interactive shell for debugging:
+
+```bash
+docker run -it \
+  --env-file .env \
+  gnosis-prediction-agent:latest \
+  bash
+```
+
+### Override Command
+
+Override the default command to run a specific agent:
+
+```bash
+docker run \
+  --env-file .env \
+  gnosis-prediction-agent:latest \
+  python prediction_market_agent/run_agent.py coinflip omen
+```
+
+## Environment Configuration
+
+### Required Variables
+
+The container CMD uses environment variables to specify the agent:
+
+```dockerfile
+CMD ["bash", "-c", "python prediction_market_agent/run_agent.py ${runnable_agent_name} ${market_type}"]
+```
+
+<CodeGroup>
+```bash Docker Run
+docker run \
+  -e runnable_agent_name="prophet_gpt4o" \
+  -e market_type="omen" \
+  --env-file .env \
+  gnosis-prediction-agent:latest
+```
+
+```yaml Docker Compose
+version: '3.8'
+services:
+  agent:
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=prophet_gpt4o
+      - market_type=omen
+    env_file:
+      - .env
+```
+</CodeGroup>
+
+### System Environment Variables
+
+The Docker image sets several system-level environment variables:
+
+<ResponseField name="PYTHONPATH" type="string" default="/app">
+  Python module search path, set to the application directory
+</ResponseField>
+
+<ResponseField name="PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION" type="string" default="python">
+  Use pure Python implementation of Protocol Buffers
+</ResponseField>
+
+<ResponseField name="TRANSFORMERS_NO_ADVISORY_WARNINGS" type="string" default="1">
+  Disable transformers warnings (we only use for tokenization, not PyTorch)
+</ResponseField>
+
+<ResponseField name="LANGFUSE_DEPLOYMENT_VERSION" type="string" default="none">
+  Deployment version for Langfuse tracing (set via build arg in CI/CD)
+</ResponseField>
+
+### System Dependencies
+
+The runtime image includes system packages required by various Python libraries:
+
+```dockerfile
+RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6
+```
+
+- **ffmpeg** - Media processing (used by some AI models)
+- **libsm6** - Session management library
+- **libxext6** - X11 extensions library
+
+## Docker Compose
+
+### Single Agent Setup
+
+Create a `docker-compose.yml` for easier management:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  prophet-agent:
+    build: .
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=prophet_gpt4o
+      - market_type=omen
+    env_file:
+      - .env
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+Run with:
+
+```bash
+docker-compose up -d
+```
+
+### Multiple Agents
+
+Run multiple agents simultaneously:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  prophet-gpt4o:
+    build: .
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=prophet_gpt4o
+      - market_type=omen
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  microchain:
+    build: .
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=microchain
+      - market_type=omen
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  social-media:
+    build: .
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=social_media
+      - market_type=omen
+    env_file:
+      - .env
+    restart: unless-stopped
+```
+
+### With Database
+
+Add a PostgreSQL database for agents that need persistence:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  database:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=prediction_agent
+      - POSTGRES_USER=agent
+      - POSTGRES_PASSWORD=secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  agent:
+    build: .
+    image: gnosis-prediction-agent:latest
+    environment:
+      - runnable_agent_name=prophet_gpt4o
+      - market_type=omen
+      - SQLALCHEMY_DB_URL=postgresql://agent:secure_password@database:5432/prediction_agent
+    env_file:
+      - .env
+    depends_on:
+      - database
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+The project includes automated Docker builds in `.github/workflows/python_cd.yaml`:
+
+```yaml
+name: Python CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    if: (contains(github.event.pull_request.body, 'build please') && github.event_name == 'pull_request') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56
+        with:
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LANGFUSE_DEPLOYMENT_VERSION=${{ github.sha }}
+```
+
+### Image Registry
+
+Images are automatically pushed to GitHub Container Registry (ghcr.io):
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/gnosis/prediction-market-agent:main
+
+# Run the image
+docker run --env-file .env ghcr.io/gnosis/prediction-market-agent:main
+```
+
+### Trigger Builds
+
+<Steps>
+  <Step title="Automatic on Main">
+    Pushes to the `main` branch automatically trigger builds
+  </Step>
+  
+  <Step title="Manual PR Builds">
+    Add "build please" to PR description to trigger a build:
+    
+    ```markdown
+    ## Changes
+    - Updated agent logic
+    - Fixed bug in market parsing
+    
+    build please
+    ```
+  </Step>
+</Steps>
+
+## Image Optimization
+
+### Size Reduction
+
+The multi-stage build reduces image size significantly:
+
+<CardGroup cols={2}>
+  <Card title="Without Multi-Stage">
+    ~2.5 GB (includes Poetry and build tools)
+  </Card>
+  <Card title="With Multi-Stage">
+    ~1.2 GB (runtime dependencies only)
+  </Card>
+</CardGroup>
+
+### Layer Caching
+
+Optimize build times by ordering Dockerfile commands strategically:
+
+1. Install system dependencies (rarely changes)
+2. Copy `pyproject.toml` and `poetry.lock` (changes occasionally)
+3. Install Python dependencies (cached until lockfile changes)
+4. Copy source code (changes frequently)
+
+### Build Cache Mount
+
+The Poetry cache is mounted during build to avoid re-downloading packages:
+
+```dockerfile
+RUN --mount=type=cache,target=$POETRY_CACHE_DIR poetry install --no-root
+```
+
+## Monitoring and Logs
+
+### View Logs
+
+```bash
+# Follow logs
+docker logs -f <container_id>
+
+# Last 100 lines
+docker logs --tail 100 <container_id>
+
+# With timestamps
+docker logs -t <container_id>
+```
+
+### Container Stats
+
+```bash
+# Real-time stats
+docker stats <container_id>
+
+# All containers
+docker stats
+```
+
+### Health Checks
+
+Add a health check to your Docker Compose:
+
+```yaml
+services:
+  agent:
+    build: .
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Build Failures">
+    If the build fails, try clearing the build cache:
+    
+    ```bash
+    docker builder prune
+    docker build --no-cache -t gnosis-prediction-agent .
+    ```
+  </Accordion>
+
+  <Accordion title="Platform Issues">
+    The Dockerfile specifies `linux/amd64`. If you're on ARM (M1/M2 Mac), you may need:
+    
+    ```bash
+    docker build --platform linux/amd64 -t gnosis-prediction-agent .
+    ```
+  </Accordion>
+
+  <Accordion title="Out of Memory">
+    Increase Docker memory limits in Docker Desktop settings or add resource limits:
+    
+    ```yaml
+    services:
+      agent:
+        build: .
+        deploy:
+          resources:
+            limits:
+              memory: 4G
+    ```
+  </Accordion>
+
+  <Accordion title="Missing Environment Variables">
+    Ensure all required variables are set. Check logs:
+    
+    ```bash
+    docker logs <container_id> 2>&1 | grep -i "error\|missing"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Cloud Deployment" icon="cloud" href="/deployment/cloud">
+    Deploy containers to Google Kubernetes Engine (GKE)
+  </Card>
+  <Card title="Environment Config" icon="gear" href="/deployment/environment">
+    Complete environment variable reference
+  </Card>
+  <Card title="Local Development" icon="laptop-code" href="/deployment/local">
+    Run agents locally without Docker
+  </Card>
+  <Card title="Contributing" icon="code-branch" href="https://github.com/gnosis/prediction-market-agent">
+    Contribute to the project on GitHub
+  </Card>
+</CardGroup>

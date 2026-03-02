@@ -1,0 +1,435 @@
+---
+title: Microchain Agent
+description: Function-calling agent using the Microchain framework for autonomous trading
+---
+
+## Overview
+
+The Microchain Agent is an autonomous trading agent built on the [Microchain framework](https://github.com/galatolofederico/microchain), which enables function-calling capabilities for LLMs. This agent can perform complex multi-step operations including market research, trading, and learning from experience.
+
+## Base Class: DeployableMicrochainAgentAbstract
+
+Abstract base class for all Microchain-based agents.
+
+```python
+class DeployableMicrochainAgentAbstract(DeployableAgent, metaclass=abc.ABCMeta):
+    model = SupportedModel.gpt_4o
+    max_iterations: int | None = 50
+    import_actions_from_memory = 0
+    import_actions_from_memory_from: DatetimeUTC | None = None
+    sleep_between_iterations = 0
+    allow_stop: bool = True
+    identifier: AgentIdentifier
+    functions_config: FunctionsConfig
+    initial_system_prompt: str
+```
+
+### Configuration Properties
+
+<ParamField path="model" type="SupportedModel" default="SupportedModel.gpt_4o">
+  The LLM model to use for the agent
+</ParamField>
+
+<ParamField path="max_iterations" type="int | None" default="50">
+  Maximum number of iterations per run. Set to `None` for unlimited iterations.
+</ParamField>
+
+<ParamField path="import_actions_from_memory" type="int" default="0">
+  Number of past actions to import from memory on initialization
+</ParamField>
+
+<ParamField path="import_actions_from_memory_from" type="DatetimeUTC | None" default="None">
+  Only import memories after this timestamp
+</ParamField>
+
+<ParamField path="sleep_between_iterations" type="int" default="0">
+  Seconds to sleep between iterations
+</ParamField>
+
+<ParamField path="allow_stop" type="bool" default="True">
+  Whether the agent can use the Stop function to end execution
+</ParamField>
+
+<ParamField path="identifier" type="AgentIdentifier">
+  Unique identifier for the agent
+</ParamField>
+
+<ParamField path="functions_config" type="FunctionsConfig">
+  Configuration specifying which function categories to enable
+</ParamField>
+
+<ParamField path="initial_system_prompt" type="str">
+  The system prompt that defines the agent's behavior
+</ParamField>
+
+### Core Components
+
+<ParamField path="long_term_memory" type="LongTermMemoryTableHandler">
+  Stores agent's execution history and learnings
+</ParamField>
+
+<ParamField path="prompt_handler" type="PromptTableHandler">
+  Manages system prompt versioning and updates
+</ParamField>
+
+<ParamField path="prompt_inject_handler" type="PromptInjectHandler">
+  Handles dynamic prompt injection for special features
+</ParamField>
+
+<ParamField path="agent" type="Agent">
+  The Microchain Agent instance
+</ParamField>
+
+<ParamField path="goal_manager" type="GoalManager | None">
+  Optional goal management system for autonomous behavior
+</ParamField>
+
+### Methods
+
+#### load
+
+```python
+def load(self) -> None
+```
+
+Initializes the agent's components including memory, prompt handlers, and the Microchain agent.
+
+#### run
+
+```python
+def run(self, market_type: MarketType) -> None
+```
+
+Main execution loop for the agent. Runs iterations until stopping condition is met.
+
+#### before_iteration_callback
+
+```python
+def before_iteration_callback(self) -> CallbackReturn
+```
+
+Hook called before each iteration. Return `CallbackReturn.STOP` to halt execution.
+
+#### after_iteration_callback
+
+```python
+def after_iteration_callback(self) -> CallbackReturn
+```
+
+Hook called after each iteration. Return `CallbackReturn.STOP` to halt execution.
+
+## Production Agent: DeployableMicrochainAgent
+
+Standard Microchain agent with full trading capabilities.
+
+```python
+class DeployableMicrochainAgent(DeployableMicrochainAgentAbstract):
+    identifier = MICROCHAIN_AGENT_OMEN
+    functions_config = TRADING_AGENT_SYSTEM_PROMPT_CONFIG.functions_config
+    initial_system_prompt = TRADING_AGENT_SYSTEM_PROMPT_CONFIG.system_prompt
+```
+
+### Usage
+
+```python
+from prediction_market_agent.agents.microchain_agent.deploy import (
+    DeployableMicrochainAgent
+)
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+agent = DeployableMicrochainAgent(
+    enable_langfuse=True,
+    place_trades=True,
+)
+
+agent.deploy(
+    market_type=MarketType.OMEN,
+)
+```
+
+## Learning Variants
+
+Agents with "just born" system prompts that can modify their own behavior.
+
+### DeployableMicrochainModifiableSystemPromptAgent0/1/2
+
+Agents that start with minimal knowledge and learn through experience.
+
+```python
+class DeployableMicrochainModifiableSystemPromptAgent0(
+    DeployableMicrochainModifiableSystemPromptAgentAbstract
+):
+    identifier = MICROCHAIN_AGENT_OMEN_LEARNING_0
+```
+
+<ParamField path="functions_config" type="FunctionsConfig">
+  Uses `JUST_BORN_SYSTEM_PROMPT_CONFIG` with learning functions enabled
+</ParamField>
+
+<ParamField path="initial_system_prompt" type="str">
+  Minimal "just born" prompt allowing the agent to discover its capabilities
+</ParamField>
+
+### DeployableMicrochainModifiableSystemPromptAgent3
+
+Llama 3.1 variant with reduced iterations.
+
+```python
+class DeployableMicrochainModifiableSystemPromptAgent3(
+    DeployableMicrochainModifiableSystemPromptAgentAbstract
+):
+    identifier = MICROCHAIN_AGENT_OMEN_LEARNING_3
+    model = SupportedModel.llama_31_instruct
+    max_iterations = 10  # Limited by API token constraints
+```
+
+## Goal-Managed Agent
+
+### DeployableMicrochainWithGoalManagerAgent0
+
+Agent with autonomous goal setting and evaluation.
+
+```python
+class DeployableMicrochainWithGoalManagerAgent0(DeployableMicrochainAgent):
+    identifier = MICROCHAIN_AGENT_OMEN_WITH_GOAL_MANAGER
+    model = SupportedModel.gpt_4o
+    functions_config = TRADING_AGENT_SYSTEM_PROMPT_MINIMAL_CONFIG.functions_config
+    initial_system_prompt = TRADING_AGENT_SYSTEM_PROMPT_MINIMAL_CONFIG.system_prompt
+```
+
+#### Goal Manager Configuration
+
+```python
+def build_goal_manager(self, agent: Agent) -> GoalManager:
+    return GoalManager(
+        agent_id=self.identifier,
+        high_level_description="You are a trader agent in prediction markets, aiming to maximise your long-term profit.",
+        agent_capabilities=f"You have the following capabilities:\n{get_functions_summary_list(agent.engine)}",
+        retry_limit=1,
+        goal_history_limit=10,
+    )
+```
+
+## Supported Models
+
+```python
+class SupportedModel(str, Enum):
+    gpt_4o = "gpt-4o-2024-08-06"
+    gpt_4o_mini = "gpt-4o-mini-2024-07-18"
+    gpt_4_turbo = "gpt-4-turbo"
+    llama_31_instruct = "meta/meta-llama-3.1-405b-instruct"
+    deepseek_chat = "deepseek/deepseek-chat"
+    deepseek_r1 = "deepseek/deepseek-r1"
+    gemini_20_flash = "google/gemini-2.0-flash-001"
+```
+
+## Function Categories
+
+The agent can be configured with various function categories:
+
+<ParamField path="common_functions" type="bool">
+  Basic utility functions
+</ParamField>
+
+<ParamField path="include_agent_functions" type="bool">
+  Agent self-modification capabilities
+</ParamField>
+
+<ParamField path="include_universal_functions" type="bool">
+  API calls, code execution, web search
+</ParamField>
+
+<ParamField path="include_job_functions" type="bool">
+  Task scheduling and automation
+</ParamField>
+
+<ParamField path="include_learning_functions" type="bool">
+  Memory and learning capabilities
+</ParamField>
+
+<ParamField path="include_trading_functions" type="bool">
+  Market analysis and trading operations
+</ParamField>
+
+<ParamField path="include_sending_functions" type="bool">
+  Fund transfer capabilities
+</ParamField>
+
+<ParamField path="include_twitter_functions" type="bool">
+  Social media integration
+</ParamField>
+
+<ParamField path="include_nft_functions" type="bool">
+  NFT operations
+</ParamField>
+
+<ParamField path="balance_functions" type="bool">
+  Balance checking and management
+</ParamField>
+
+## Building Custom Agents
+
+### Custom Function Configuration
+
+```python
+from prediction_market_agent.agents.microchain_agent.deploy import (
+    DeployableMicrochainAgentAbstract
+)
+from prediction_market_agent.agents.microchain_agent.prompts import (
+    FunctionsConfig
+)
+from prediction_market_agent.agents.identifiers import AgentIdentifier
+
+class MyCustomMicrochainAgent(DeployableMicrochainAgentAbstract):
+    identifier = "my-custom-agent"
+    model = SupportedModel.gpt_4o_mini
+    max_iterations = 30
+    
+    functions_config = FunctionsConfig(
+        common_functions=True,
+        include_trading_functions=True,
+        include_universal_functions=True,
+        # Disable other function categories
+        include_agent_functions=False,
+        include_learning_functions=False,
+    )
+    
+    initial_system_prompt = """
+    You are a focused trading agent.
+    Your goal is to find and trade on profitable prediction markets.
+    Use web search to research markets before trading.
+    """
+
+agent = MyCustomMicrochainAgent()
+agent.deploy_local(market_type=MarketType.OMEN)
+```
+
+### Importing Past Memory
+
+```python
+from prediction_market_agent_tooling.tools.datetime_utc import DatetimeUTC
+
+class MemoryImportingAgent(DeployableMicrochainAgent):
+    import_actions_from_memory = 20  # Import last 20 actions
+    import_actions_from_memory_from = DatetimeUTC(2024, 1, 1)  # From 2024 onwards
+
+agent = MemoryImportingAgent()
+agent.deploy_local(market_type=MarketType.OMEN)
+```
+
+### Custom Callbacks
+
+```python
+class CallbackAgent(DeployableMicrochainAgent):
+    def before_iteration_callback(self) -> CallbackReturn:
+        # Check some condition
+        if should_stop():
+            logger.info("Stopping agent due to custom condition")
+            return CallbackReturn.STOP
+        return CallbackReturn.CONTINUE
+    
+    def after_iteration_callback(self) -> CallbackReturn:
+        # Log metrics after each iteration
+        log_agent_metrics(self.agent)
+        return CallbackReturn.CONTINUE
+```
+
+## Helper Functions
+
+### build_agent
+
+```python
+def build_agent(
+    keys: APIKeys,
+    market_type: MarketType,
+    model: SupportedModel,
+    unformatted_system_prompt: str,
+    functions_config: FunctionsConfig,
+    enable_langfuse: bool,
+    long_term_memory: LongTermMemoryTableHandler | None = None,
+    max_tokens: int = 8196,
+    allow_stop: bool = True,
+    bootstrap: str | None = None,
+    raise_on_error: bool = True,
+) -> Agent
+```
+
+Builds a Microchain agent with specified configuration.
+
+### save_agent_history
+
+```python
+def save_agent_history(
+    long_term_memory: LongTermMemoryTableHandler,
+    agent: Agent,
+    initial_system_prompt: str,
+    save_last_n: int | None = None,
+) -> None
+```
+
+Saves agent's execution history to long-term memory.
+
+### get_functions_summary_list
+
+```python
+def get_functions_summary_list(engine: Engine) -> str
+```
+
+Generates a formatted list of available functions for the agent.
+
+## Advanced Features
+
+### Smart Contract Integration
+
+```python
+def build_functions_from_smart_contract(
+    keys: APIKeys,
+    contract_address: ChecksumAddress,
+    contract_name: str
+) -> list[Function]
+```
+
+Automatically generates Microchain functions from smart contract ABIs.
+
+### System Prompt Versioning
+
+The agent automatically saves and restores system prompts:
+
+```python
+def get_unformatted_system_prompt(
+    unformatted_prompt: str,
+    prompt_table_handler: PromptTableHandler | None
+) -> str
+```
+
+## Required API Keys
+
+<ParamField path="OPENAI_API_KEY" type="str">
+  Required for GPT models
+</ParamField>
+
+<ParamField path="REPLICATE_API_KEY" type="str">
+  Required for Llama models
+</ParamField>
+
+<ParamField path="OPENROUTER_API_KEY" type="str">
+  Required for DeepSeek and Gemini models
+</ParamField>
+
+<ParamField path="TAVILY_API_KEY" type="str">
+  Required if search functions are enabled
+</ParamField>
+
+## Source Location
+
+```
+prediction_market_agent/agents/microchain_agent/deploy.py
+prediction_market_agent/agents/microchain_agent/microchain_agent.py
+```
+
+## Related
+
+- [Microchain Framework](https://github.com/galatolofederico/microchain) - Underlying framework
+- [Goal Manager](/api/core/goal-manager) - Autonomous goal setting
+- [Long Term Memory](/api/core/memory) - Agent memory system
+- [Function Calling](/api/concepts/functions) - Available agent functions

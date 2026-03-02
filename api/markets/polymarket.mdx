@@ -1,0 +1,383 @@
+---
+title: 'Polymarket Market API'
+description: 'API reference for Polymarket prediction market integration'
+---
+
+## Overview
+
+Polymarket is a real-money prediction market platform built on Polygon that allows users to trade on the outcome of future events using USDC. The Polymarket market API provides access to high-liquidity markets with significant trading volume.
+
+## MarketType Enum
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+market_type = MarketType.POLYMARKET
+```
+
+## Market Class
+
+### PolymarketAgentMarket
+
+The `PolymarketAgentMarket` class extends `AgentMarket` and provides Polymarket-specific functionality.
+
+```python
+from prediction_market_agent_tooling.markets.polymarket.polymarket import PolymarketAgentMarket
+```
+
+## Core Methods
+
+### Get Markets
+
+Retrieve available prediction markets from Polymarket.
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import FilterBy, SortBy
+
+markets = PolymarketAgentMarket.get_markets(
+    limit=500,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.HIGHEST_LIQUIDITY
+)
+```
+
+<ParamField path="limit" type="int">
+  Maximum number of markets to retrieve (commonly 500 for Polymarket)
+</ParamField>
+
+<ParamField path="filter_by" type="FilterBy">
+  Filter markets by status (OPEN, RESOLVED, etc.)
+</ParamField>
+
+<ParamField path="sort_by" type="SortBy">
+  Sort order (HIGHEST_LIQUIDITY recommended for Polymarket)
+</ParamField>
+
+<ResponseField name="markets" type="list[PolymarketAgentMarket]">
+  List of market objects matching the query criteria
+</ResponseField>
+
+### Get Binary Market
+
+Retrieve a specific binary market by ID.
+
+```python
+market = PolymarketAgentMarket.get_binary_market(
+    id="polymarket-market-id"
+)
+```
+
+<ParamField path="id" type="str" required>
+  Polymarket market ID (condition ID)
+</ParamField>
+
+<ResponseField name="market" type="PolymarketAgentMarket">
+  Market object containing question, probabilities, and trading information
+</ResponseField>
+
+### Buy Tokens
+
+Purchase outcome tokens for a market.
+
+```python
+market.buy_tokens(
+    outcome="Yes",
+    amount=USD(100)  # In USDC
+)
+```
+
+<ParamField path="outcome" type="str" required>
+  Outcome to bet on ("Yes" or "No" for binary markets)
+</ParamField>
+
+<ParamField path="amount" type="USD" required>
+  Amount to spend in USDC
+</ParamField>
+
+### Get Trade Balance
+
+Get available USDC balance for trading.
+
+```python
+balance = PolymarketAgentMarket.get_trade_balance(api_keys)
+```
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys containing Polymarket credentials and wallet
+</ParamField>
+
+<ResponseField name="balance" type="USD">
+  Available USDC balance for trading
+</ResponseField>
+
+## Market Data Model
+
+### Market Properties
+
+<ResponseField name="id" type="str">
+  Polymarket market condition ID
+</ResponseField>
+
+<ResponseField name="question" type="str">
+  Market question text
+</ResponseField>
+
+<ResponseField name="description" type="str | None">
+  Market description with additional context
+</ResponseField>
+
+<ResponseField name="outcomes" type="list[str]">
+  Available outcomes (e.g., ["Yes", "No"] for binary markets)
+</ResponseField>
+
+<ResponseField name="p_yes" type="Probability">
+  Current probability of "Yes" outcome (0.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="volume" type="USD | None">
+  Total trading volume in USDC
+</ResponseField>
+
+<ResponseField name="close_time" type="DatetimeUTC | None">
+  When the market closes for trading
+</ResponseField>
+
+<ResponseField name="created_time" type="DatetimeUTC | None">
+  When the market was created
+</ResponseField>
+
+<ResponseField name="url" type="str">
+  Direct link to the market on Polymarket
+</ResponseField>
+
+<ResponseField name="is_open" type="bool">
+  Whether the market is currently open for trading
+</ResponseField>
+
+<ResponseField name="resolution" type="str | None">
+  Final resolution outcome (if resolved)
+</ResponseField>
+
+## Polymarket-Specific Features
+
+### Real-Money Trading
+
+Polymarket uses USDC (USD Coin) for real-money predictions on Polygon.
+
+```python
+# All amounts are in USDC
+market.buy_tokens(outcome="Yes", amount=USD(50))  # 50 USDC
+```
+
+### High Liquidity Markets
+
+Polymarket is known for high-liquidity markets, especially on political and current events.
+
+```python
+# Fetch by highest liquidity
+markets = PolymarketAgentMarket.get_markets(
+    limit=500,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.HIGHEST_LIQUIDITY
+)
+```
+
+### The Graph Integration
+
+Polymarket market data is accessible via The Graph protocol.
+
+```python
+# Query historical market data
+url = f"https://gateway.thegraph.com/api/{api_key}/subgraphs/id/81Dm16JjuFSrqz813HysXoUPvzTwE7fsfPk2RTf66nyC"
+```
+
+## Real-World Examples
+
+### Historical Data Analysis
+
+Query historical Polymarket data for sentiment analysis.
+
+```python
+import httpx
+from prediction_market_agent.agents.berlin1_agent.polysent_agent import (
+    get_polymarket_history,
+)
+
+# Get historical data for a market question
+history_data = get_polymarket_history(market.question)
+
+# Returns market history with outcomes and prices
+for market_data in history_data:
+    print(f"Question: {market_data['question']}")
+    print(f"Volume: {market_data['volume']}")
+    for outcome in market_data['outcomes']:
+        print(f"  {outcome['name']}: {outcome['price']}")
+```
+
+### Market Replication
+
+Replicate high-quality Polymarket markets to other platforms.
+
+```python
+from prediction_market_agent.agents.replicate_to_omen_agent.omen_replicate import (
+    omen_replicate_from_tx,
+)
+
+# Fetch top 500 Polymarket markets by liquidity
+markets = get_binary_markets(
+    500,
+    MarketType.POLYMARKET,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.HIGHEST_LIQUIDITY
+)
+
+# Replicate to Omen
+created_addresses = omen_replicate_from_tx(
+    api_keys=api_keys,
+    market_type=MarketType.POLYMARKET,
+    n_to_replicate=5,
+    initial_funds=USD(10),
+    collateral_token_address=collateral_token,
+    replicated_market_table_handler=handler
+)
+```
+
+### Trading Strategy Example
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+
+class PolymarketTradingAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 2
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Analyze Polymarket-specific factors
+        if market.volume and market.volume > USD(10000):
+            # High liquidity market - more reliable price discovery
+            prediction = self.predict_with_high_confidence(market)
+        else:
+            # Lower liquidity - be more cautious
+            prediction = self.predict_with_low_confidence(market)
+        
+        return prediction
+
+# Run agent
+agent = PolymarketTradingAgent()
+agent.run(market_type=MarketType.POLYMARKET)
+```
+
+### Microchain Function
+
+Use Polymarket in microchain-based agents.
+
+```python
+from prediction_market_agent.agents.microchain_agent.utils import (
+    get_binary_markets,
+)
+
+# Note: Polymarket uses NONE sort by default in microchain
+markets = get_binary_markets(
+    market_type=MarketType.POLYMARKET
+)  # Uses SortBy.NONE internally
+```
+
+## Platform Details
+
+- **Blockchain**: Polygon (Layer 2)
+- **Currency**: USDC (USD Coin)
+- **Website**: https://polymarket.com
+- **Market Types**: Primarily binary (Yes/No)
+- **Focus**: Political events, current affairs, crypto
+- **Liquidity**: Often highest among prediction markets
+- **Resolution**: UMA protocol for decentralized resolution
+
+## Market Categories
+
+Polymarket markets typically cover:
+- Politics & elections
+- Cryptocurrency prices
+- Sports outcomes
+- Current events
+- Pop culture
+- Economic indicators
+
+## Advantages
+
+- **Real Money**: USDC-based real-money predictions
+- **High Liquidity**: Large trading volumes
+- **Quality Markets**: Professional market creation
+- **Decentralized Resolution**: UMA protocol
+- **Institutional Interest**: Growing institutional participation
+
+## Considerations
+
+### Sorting Behavior
+
+When fetching Polymarket markets for trading:
+
+```python
+# Use NONE sort in microchain agents
+if market_type == MarketType.POLYMARKET:
+    sort_by = SortBy.NONE
+else:
+    sort_by = SortBy.CLOSING_SOONEST
+```
+
+### Volume-Based Filtering
+
+Focus on high-volume markets for better price discovery.
+
+```python
+markets_sorted = sorted(
+    markets,
+    key=lambda m: m.volume or 0,
+    reverse=True,
+)
+```
+
+### Regulatory Compliance
+
+Polymarket has geographic restrictions. Ensure compliance with local regulations.
+
+## GraphQL Query Example
+
+```graphql
+{
+  binaryMarkets(first: 5, where: {question_contains: "Bitcoin"}) {
+    id
+    question
+    outcomes {
+      name
+      price
+    }
+    volume
+    startTime
+    endTime
+  }
+}
+```
+
+## Error Handling
+
+```python
+try:
+    market = PolymarketAgentMarket.get_binary_market(id=market_id)
+    market.buy_tokens(outcome="Yes", amount=USD(100))
+except Exception as e:
+    logger.error(f"Polymarket trade failed: {e}")
+    # Handle insufficient balance, market closed, etc.
+```
+
+## Best Practices
+
+1. **Sort by Liquidity**: Use `SortBy.HIGHEST_LIQUIDITY` for better markets
+2. **Check Volume**: Verify sufficient volume before trading
+3. **Monitor Fees**: Account for trading fees in calculations
+4. **Verify Resolution**: Understand UMA resolution process
+5. **Manage Risk**: Use appropriate position sizing
+
+## See Also
+
+- [Omen Market API](/api/markets/omen)
+- [Manifold Market API](/api/markets/manifold)
+- [Metaculus Market API](/api/markets/metaculus)

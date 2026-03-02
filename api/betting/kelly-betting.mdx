@@ -1,0 +1,620 @@
+---
+title: "Kelly Betting Strategies"
+description: "API reference for Kelly criterion-based betting strategies for optimal position sizing"
+---
+
+## Overview
+
+Kelly betting strategies implement the Kelly criterion for optimal bet sizing that maximizes long-term capital growth. The framework provides multiple Kelly implementations for different market types and risk profiles.
+
+<Info>
+  Kelly betting automatically calculates optimal position sizes based on your predicted probability, current market odds, and available capital.
+</Info>
+
+## BettingStrategy Base Class
+
+All betting strategies inherit from the `BettingStrategy` base class.
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import BettingStrategy
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.gtypes import USD
+
+class CustomStrategy(BettingStrategy):
+    def calculate_bet_amount(
+        self,
+        answer: ProbabilisticAnswer,
+        market: AgentMarket,
+    ) -> USD:
+        # Your custom logic
+        return USD(1.0)
+```
+
+### Base Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to allocate to a single position. This caps the Kelly recommendation to prevent over-betting.
+</ParamField>
+
+## SimpleBinaryKellyBettingStrategy
+
+Basic Kelly criterion implementation for binary markets. Calculates optimal bet size using the standard Kelly formula.
+
+### Usage
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    SimpleBinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+
+class MyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleBinaryKellyBettingStrategy(
+            max_position_amount=USD(5.0),
+        )
+```
+
+```python With Dynamic Sizing
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class Berlin2Agent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(3.3),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position. The Kelly formula will recommend a bet size, but it will be capped at this amount.
+  
+  **Example values:**
+  - `USD(2.5)` - Fixed maximum of $2.50 per bet
+  - `USD(5.0)` - Fixed maximum of $5.00 per bet
+</ParamField>
+
+### How It Works
+
+The simple Kelly strategy uses this formula:
+
+```
+Kelly % = (p * b - q) / b
+
+Where:
+p = probability of winning (your p_yes)
+q = probability of losing (1 - p)
+b = net odds received (determined by market price)
+```
+
+<Tip>
+  SimpleBinaryKellyBettingStrategy is ideal for beginners. It provides optimal bet sizing without additional complexity.
+</Tip>
+
+## FullBinaryKellyBettingStrategy
+
+Advanced Kelly implementation that accounts for price impact (slippage) when placing large orders. Recommended for markets with variable liquidity.
+
+### Usage
+
+<CodeGroup>
+```python Conservative
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    FullBinaryKellyBettingStrategy,
+)
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class ProphetAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+        )
+```
+
+```python Aggressive
+class AggressiveAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(10),
+            max_price_impact=1.0,  # Accept up to 100% price impact
+        )
+```
+
+```python With Market Type Check
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+class ThinkThoroughlyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return (
+            FullBinaryKellyBettingStrategy(
+                max_position_amount=get_maximum_possible_bet_amount(
+                    min_=USD(1),
+                    max_=USD(5),
+                    trading_balance=market.get_trade_balance(APIKeys()),
+                ),
+                max_price_impact=None,  # No price impact limit
+            )
+            if isinstance(market, OmenAgentMarket)
+            else super().get_betting_strategy(market)
+        )
+```
+
+```python Disable Profit Taking
+class LongTermAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+            take_profit=False,  # Hold until resolution
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single position
+</ParamField>
+
+<ParamField path="max_price_impact" type="float | None" default="0.1">
+  Maximum acceptable price impact (slippage) as a decimal fraction.
+  
+  **Common values:**
+  - `0.1` (10%) - Very conservative, suitable for low-liquidity markets
+  - `0.3` (30%) - Moderate risk tolerance
+  - `0.6` (60%) - Aggressive, accepts significant slippage
+  - `0.7` (70%) - Very aggressive
+  - `None` - No limit on price impact
+  
+  **Example:** With `max_price_impact=0.5`, if the market price is 0.60, you'll accept prices up to 0.90 (60% + 50% of 60%).
+</ParamField>
+
+<ParamField path="take_profit" type="bool" default="True">
+  Whether to automatically take profits by selling positions when profitable.
+  
+  - `True` - Automatically realize gains when positions become profitable
+  - `False` - Hold positions until market resolution for potentially larger final payout
+</ParamField>
+
+### Real-World Examples
+
+<AccordionGroup>
+  <Accordion title="DeployablePredictionProphetGPT4oAgent">
+    Standard configuration with moderate price impact tolerance:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:122`
+  </Accordion>
+  
+  <Accordion title="DeployableKnownOutcomeAgent">
+    Aggressive betting on high-confidence predictions:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(2),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.6,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/known_outcome_agent/deploy.py:31`
+  </Accordion>
+  
+  <Accordion title="DeployablePredictionProphetGPT4oAgent_C (No Profit Taking)">
+    Holds positions until market resolution:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+            take_profit=False,
+        )
+    ```
+    
+    **Use case:** Testing whether holding positions to resolution increases profits via larger final payouts.
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:324`
+  </Accordion>
+  
+  <Accordion title="DeployablePredictionProphetGPTo1PreviewAgent">
+    Configuration for o1-preview agent with moderate price impact:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(2),
+                max_=USD(6),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.2922,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:611`
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  High `max_price_impact` values can result in poor execution prices. Start conservative and increase based on your market's liquidity.
+</Warning>
+
+## SimpleCategoricalKellyBettingStrategy
+
+Kelly betting for markets with more than two outcomes. Supports single-outcome betting or multi-categorical strategies.
+
+### Usage
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    SimpleCategoricalKellyBettingStrategy,
+)
+
+class Berlin1PolySentAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return SimpleCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(2.05),
+                trading_balance=market.get_trade_balance(self.api_keys),
+            ),
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+```
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single outcome
+</ParamField>
+
+<ParamField path="allow_multiple_bets" type="bool" default="True">
+  Allow placing bets on multiple outcomes within the same market.
+  
+  - `True` - Can bet on multiple outcomes if Kelly recommends it
+  - `False` - Only bet on the single most favorable outcome
+</ParamField>
+
+<ParamField path="allow_shorting" type="bool" default="False">
+  Allow betting against outcomes (shorting).
+  
+  - `True` - Can take short positions on overpriced outcomes
+  - `False` - Only take long positions
+</ParamField>
+
+<ParamField path="multicategorical" type="bool" default="False">
+  Enable multi-categorical betting mode.
+  
+  - `True` - Use multi-categorical Kelly formula
+  - `False` - Treat each outcome independently
+</ParamField>
+
+<Info>
+  For most use cases, set `allow_multiple_bets=False` and `allow_shorting=False` for simpler, more conservative betting.
+</Info>
+
+## FullCategoricalKellyBettingStrategy
+
+Advanced Kelly betting for categorical markets with price impact consideration.
+
+### Usage
+
+<CodeGroup>
+```python Standard Configuration
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    FullCategoricalKellyBettingStrategy,
+)
+
+class ProphetCategoricalAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.01),
+                max_=USD(0.75),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.068,
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+```
+
+```python High Liquidity Markets
+class Gemini20FlashAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5.95),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=1.38,  # Accepts very high slippage
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+```
+
+```python With Market Type Fallback
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+class OlasEmbeddingAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return (
+            FullCategoricalKellyBettingStrategy(
+                max_position_amount=get_maximum_possible_bet_amount(
+                    min_=USD(0.1),
+                    max_=USD(6),
+                    trading_balance=market.get_trade_balance(APIKeys()),
+                ),
+                max_price_impact=0.7333,
+                allow_multiple_bets=False,
+                allow_shorting=False,
+                multicategorical=False,
+            )
+            if isinstance(market, OmenAgentMarket)
+            else super().get_betting_strategy(market)
+        )
+```
+</CodeGroup>
+
+### Parameters
+
+<ParamField path="max_position_amount" type="USD" required>
+  Maximum amount to bet on a single outcome
+</ParamField>
+
+<ParamField path="max_price_impact" type="float" default="0.1">
+  Maximum acceptable price impact as a decimal fraction (see FullBinaryKellyBettingStrategy for details)
+</ParamField>
+
+<ParamField path="allow_multiple_bets" type="bool" default="True">
+  Allow betting on multiple outcomes in the same market
+</ParamField>
+
+<ParamField path="allow_shorting" type="bool" default="False">
+  Allow betting against outcomes (shorting)
+</ParamField>
+
+<ParamField path="multicategorical" type="bool" default="False">
+  Enable multi-categorical betting mode
+</ParamField>
+
+### Real-World Examples
+
+<AccordionGroup>
+  <Accordion title="DeployablePredictionProphetGPT4oAgentCategorical">
+    Conservative categorical betting with low price impact tolerance:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.01),
+                max_=USD(0.75),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.068,
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:164`
+  </Accordion>
+  
+  <Accordion title="DeployablePredictionProphetGemini20Flash">
+    Aggressive categorical betting accepting high price impact:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5.95),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=1.38,
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:366`
+  </Accordion>
+  
+  <Accordion title="DeployableOlasEmbeddingOAAgent">
+    Balanced configuration for embedding-based agent:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(6),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7333,
+            allow_multiple_bets=False,
+            allow_shorting=False,
+            multicategorical=False,
+        )
+    ```
+    
+    Location: `prediction_market_agent/agents/prophet_agent/deploy.py:571`
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The framework automatically falls back to tiny bets on non-Omen markets where full Kelly isn't properly implemented yet.
+</Note>
+
+## Integration with Agents
+
+Override the `get_betting_strategy()` method in your `DeployableTraderAgent`:
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    FullBinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+
+class MyAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        # Strategy is called for each market
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(5.0),
+            max_price_impact=0.5,
+        )
+```
+
+The method receives the `market` parameter, allowing you to:
+- Adjust bet sizes based on market liquidity
+- Use different strategies for different market types
+- Scale bets with your current trading balance
+- Apply custom risk management rules
+
+## Helper Utilities
+
+### get_maximum_possible_bet_amount
+
+Utility function for dynamic bet sizing based on available balance:
+
+```python
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+from prediction_market_agent_tooling.gtypes import USD
+
+max_bet = get_maximum_possible_bet_amount(
+    min_=USD(0.1),      # Minimum bet size
+    max_=USD(5.0),      # Maximum bet size  
+    trading_balance=market.get_trade_balance(self.api_keys),
+)
+```
+
+**Logic:**
+1. Calculates 95% of trading balance (reserves 5% for fees)
+2. Ensures result is at least `min_` amount
+3. Caps result at `max_` amount
+4. Returns the bounded value
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Start Conservative">
+    Begin with conservative settings and gradually increase risk as you validate performance:
+    
+    ```python
+    # Conservative starting point
+    FullBinaryKellyBettingStrategy(
+        max_position_amount=USD(1.0),
+        max_price_impact=0.1,
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Match Strategy to Market Type">
+    Use appropriate strategies for binary vs categorical markets:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        if market.outcomes and len(market.outcomes) > 2:
+            return SimpleCategoricalKellyBettingStrategy(
+                max_position_amount=USD(3.0),
+            )
+        return SimpleBinaryKellyBettingStrategy(
+            max_position_amount=USD(5.0),
+        )
+    ```
+  </Accordion>
+  
+  <Accordion title="Consider Market Liquidity">
+    Adjust price impact tolerance based on liquidity:
+    
+    ```python
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        if market.total_liquidity > 1000:
+            max_impact = 0.7  # High liquidity
+        elif market.total_liquidity > 100:
+            max_impact = 0.3  # Medium liquidity
+        else:
+            max_impact = 0.1  # Low liquidity
+            
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(5.0),
+            max_price_impact=max_impact,
+        )
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Fractional Kelly for Safety">
+    Bet a fraction of the Kelly recommendation to reduce variance:
+    
+    ```python
+    # 50% Kelly (Half Kelly)
+    return SimpleBinaryKellyBettingStrategy(
+        max_position_amount=USD(5.0) * 0.5,
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Max Expected Value" icon="sack-dollar" href="/api/betting/max-expected-value">
+    Alternative strategy focused on expected value
+  </Card>
+  <Card title="Max Accuracy" icon="bullseye" href="/api/betting/max-accuracy">
+    Strategies optimized for prediction accuracy
+  </Card>
+  <Card title="Betting Strategies Concept" icon="book" href="/concepts/betting-strategies">
+    Learn about betting strategy fundamentals
+  </Card>
+  <Card title="Agent Architecture" icon="robot" href="/concepts/agents">
+    Understand how agents use betting strategies
+  </Card>
+</CardGroup>

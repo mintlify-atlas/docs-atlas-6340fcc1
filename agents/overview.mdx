@@ -1,0 +1,116 @@
+---
+title: Agent Gallery Overview
+description: Explore 60+ specialized prediction market agents with different strategies and capabilities
+---
+
+The Gnosis Prediction Market Agent platform includes over 60 specialized agents, each designed with unique trading strategies, models, and capabilities. These agents range from simple random traders to sophisticated AI-powered prediction systems.
+
+## Agent Categories
+
+Agents are organized into the following categories:
+
+<CardGroup cols={2}>
+  <Card title="Simple Agents" icon="dice" href="/agents/simple-agents">
+    Basic agents including coinflip and known outcome predictors
+  </Card>
+  <Card title="Research Agents" icon="magnifying-glass" href="/agents/research-agents">
+    Advanced agents with web research and analysis capabilities
+  </Card>
+  <Card title="Prophet Agents" icon="crystal-ball" href="/agents/prophet-agents">
+    LLM-powered agents using GPT-4, Claude, Gemini, and more
+  </Card>
+  <Card title="Microchain Agents" icon="link" href="/agents/microchain-agents">
+    Self-learning agents with modifiable prompts and goal management
+  </Card>
+  <Card title="Specialized Agents" icon="star" href="/agents/specialized-agents">
+    Purpose-built agents for arbitrage, social media, and market monitoring
+  </Card>
+</CardGroup>
+
+## Running Agents
+
+All agents in the gallery can be run using the `run_agent.py` entrypoint:
+
+```bash
+python prediction_market_agent/run_agent.py <agent_name> <market_type>
+```
+
+### Example
+
+```bash
+# Run the GPT-4o Prophet agent on Omen markets
+python prediction_market_agent/run_agent.py prophet_gpt4o omen
+
+# Run the coinflip agent on Manifold markets
+python prediction_market_agent/run_agent.py coinflip manifold
+```
+
+## Agent Architecture
+
+All agents inherit from the `DeployableAgent` base class from the [prediction-market-agent-tooling](https://github.com/gnosis/prediction-market-agent-tooling) library. This provides:
+
+- Market fetching and filtering
+- Trade execution and position management
+- Betting strategy configuration
+- Monitoring and logging
+- Deployment utilities for GKE
+
+### Key Agent Methods
+
+Agents implement these core methods:
+
+```python
+class DeployableAgent:
+    def load(self) -> None:
+        """Initialize agent resources and models"""
+        
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        """Generate prediction for binary markets"""
+        
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        """Filter markets to trade on"""
+        
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        """Configure bet sizing and risk management"""
+```
+
+## Performance Tracking
+
+Agent performance can be tracked using:
+
+- **Langfuse**: All agents support tracing via `enable_langfuse=True`
+- **Database Storage**: Predictions and trades are stored in PostgreSQL
+- **Metrics**: PnL, accuracy, and bet statistics available via the API
+
+## Adding New Agents
+
+To add a new agent to the platform:
+
+1. Create your agent class inheriting from `DeployableAgent`
+2. Add it to the `RunnableAgent` enum in `run_agent.py`
+3. Register it in the `RUNNABLE_AGENTS` dictionary
+4. Deploy to GKE or run locally
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+
+class MyCustomAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Your prediction logic here
+        return ProbabilisticAnswer(
+            p_yes=Probability(0.7),
+            confidence=0.8,
+            reasoning="My analysis shows..."
+        )
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Simple Agents" icon="dice" href="/agents/simple-agents">
+    Start with basic agents
+  </Card>
+  <Card title="Prophet Agents" icon="crystal-ball" href="/agents/prophet-agents">
+    Explore LLM-powered predictions
+  </Card>
+</CardGroup>

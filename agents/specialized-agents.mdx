@@ -1,0 +1,510 @@
+---
+title: Specialized Agents
+description: Purpose-built agents for arbitrage, social media, market monitoring, and specific use cases
+---
+
+Specialized agents are designed for specific tasks beyond standard prediction trading, including arbitrage opportunities, social media integration, market quality monitoring, and niche strategies.
+
+## Available Agents
+
+<CardGroup cols={2}>
+  <Card title="Arbitrage Agent" icon="scale-balanced">
+    Risk-neutral profit through correlated market pairs
+  </Card>
+  <Card title="Social Media Agent" icon="share-nodes">
+    Automated posting to Farcaster and Twitter
+  </Card>
+  <Card title="Market Creators Stalker" icon="user-secret">
+    Targets markets from specific creators
+  </Card>
+  <Card title="Monitoring Agents" icon="eye">
+    Market quality and anomaly detection
+  </Card>
+  <Card title="Metaculus Agent" icon="trophy">
+    Tournament participation agent
+  </Card>
+  <Card title="Replication Agents" icon="clone">
+    Cross-platform market replication
+  </Card>
+</CardGroup>
+
+## Arbitrage Agent
+
+Finds correlated market pairs and places mirror bets for quasi risk-neutral profit.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py arbitrage omen
+```
+
+### How It Works
+
+1. **Find Similar Markets**: Use Pinecone embeddings to find related markets
+2. **Assess Correlation**: LLM evaluates if markets are inversely correlated
+3. **Calculate Profit**: Check if mispricing allows for arbitrage
+4. **Place Mirror Bets**: Bet YES on one market, NO on correlated market
+5. **Lock in Profit**: Regardless of outcome, one bet wins
+
+### Implementation
+
+```python
+class DeployableArbitrageAgent(DeployableTraderAgent):
+    model = "gpt-4o"
+    total_trade_amount = USD(0.1)
+    bet_on_n_markets_per_run = 5
+    max_related_markets_per_market = 10
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Always returns 50/50 - actual logic is in build_trades
+        return ProbabilisticAnswer(p_yes=Probability(0.5), confidence=1.0)
+    
+    def get_correlated_markets(self, market: AgentMarket) -> list[CorrelatedMarketPair]:
+        # Find similar markets using Pinecone
+        related = self.pinecone_handler.find_nearest_questions_with_threshold(
+            limit=self.max_related_markets_per_market,
+            text=market.question,
+            filter_on_metadata={"close_time_timestamp": {"$gte": int((utcnow() + timedelta(hours=1)).timestamp())}},
+        )
+        
+        correlated_markets = []
+        for related_market in related:
+            # Ask LLM to assess correlation
+            result: Correlation = self.chain.invoke({
+                "main_market_question": market.question,
+                "related_market_question": related_market.question,
+            })
+            
+            if result.near_perfect_correlation is not None:
+                correlated_markets.append(
+                    CorrelatedMarketPair(
+                        main_market=market,
+                        related_market=related_market,
+                        correlation=result,
+                    )
+                )
+        
+        return correlated_markets
+    
+    def build_trades_for_correlated_markets(
+        self, pair: CorrelatedMarketPair
+    ) -> list[MarketTrade]:
+        # Only proceed if profit > 0.5% per market
+        if pair.potential_profit_per_bet_unit() > 0.005:
+            arbitrage_bet = pair.split_bet_amount_between_yes_and_no(self.total_trade_amount)
+            
+            return [
+                MarketTrade(
+                    trade_type=TradeType.BUY,
+                    outcome=arbitrage_bet.main_market_bet.direction,
+                    amount=arbitrage_bet.main_market_bet.size,
+                    market=pair.main_market,
+                ),
+                MarketTrade(
+                    trade_type=TradeType.BUY,
+                    outcome=arbitrage_bet.related_market_bet.direction,
+                    amount=arbitrage_bet.related_market_bet.size,
+                    market=pair.related_market,
+                ),
+            ]
+        return []
+```
+
+### LLM Prompt for Correlation
+
+```python
+PROMPT_TEMPLATE = """
+Analyze the correlation between these two prediction markets:
+
+Main Market: {main_market_question}
+Related Market: {related_market_question}
+
+Determine if these markets are:
+1. Near-perfectly correlated (same outcome)
+2. Near-perfectly inversely correlated (opposite outcomes)
+3. Not correlated
+
+{format_instructions}
+"""
+```
+
+### Example Arbitrage
+
+```
+Market A: "Will Bitcoin be above $50k on Dec 31?"
+- Currently: 60% YES, 40% NO
+
+Market B: "Will Bitcoin be below $50k on Dec 31?"
+- Currently: 45% YES, 55% NO
+
+Arbitrage Opportunity:
+- Bet $0.05 YES on Market A (60 shares)
+- Bet $0.05 YES on Market B (45 shares)
+- Guaranteed profit if markets inversely correlated
+```
+
+### Recent Trade Cache
+
+```python
+RECENTLY_TRADED_MARKET_IDS: TTLCache[str, bool] = TTLCache(
+    maxsize=10000, 
+    ttl=3 * 60 * 60  # 3 hours
+)
+
+def mark_markets_traded(primary_market_id: str, related_market_id: str) -> None:
+    """Prevent trading symmetric leg minutes later"""
+    RECENTLY_TRADED_MARKET_IDS[primary_market_id.lower()] = True
+    RECENTLY_TRADED_MARKET_IDS[related_market_id.lower()] = True
+```
+
+## Social Media Agent
+
+Automatically posts about recent bets to Farcaster and Twitter.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py social_media omen
+```
+
+### Implementation
+
+```python
+class DeployableSocialMediaAgent(DeployableAgent):
+    model = "gpt-4-turbo-2024-04-09"
+    social_media_handlers = []
+    
+    def load(self) -> None:
+        self.social_media_handlers = [
+            FarcasterHandler(),
+            TwitterHandler(),
+        ]
+    
+    def run(self, market_type: MarketType) -> None:
+        one_day_ago = utcnow() - timedelta(days=1)
+        
+        # Get unique bets from last 24h
+        bets = self.get_unique_bets_for_market(
+            market_type=market_type, 
+            start_time=one_day_ago
+        )
+        
+        if not bets:
+            return
+        
+        # Generate tweet using LLM
+        tweet = build_social_media_text(self.model, bets)
+        
+        # Generate reasoning reply
+        reasoning_reply_tweet = build_reply_tweet(
+            model=self.model,
+            tweet=tweet,
+            bets=bets,
+            long_term_memory=long_term_memory,
+            memories_since=one_day_ago,
+        )
+        
+        # Post to all platforms
+        self.post(tweet, reasoning_reply_tweet)
+    
+    def post(self, tweet: str, reasoning_reply: str) -> None:
+        for handler in self.social_media_handlers:
+            handler.post(tweet, reasoning_reply)
+```
+
+### Tweet Generation
+
+```python
+def build_social_media_text(model: str, bets: list[Bet]) -> str:
+    """Generate engaging tweet about recent bets"""
+    prompt = f"""
+    Generate a short, engaging tweet about these prediction market bets:
+    
+    {[bet.market_question for bet in bets[:3]]}
+    
+    Requirements:
+    - Max 280 characters
+    - Exciting and informative
+    - Include key predictions
+    - Add relevant hashtags
+    """
+    # Returns tweet via LLM
+```
+
+### Example Post
+
+```
+Main tweet:
+"Just placed bets on 3 markets today! 📈
+
+🔮 Bitcoin >$50k: 65% confidence
+🏛️ US Election outcome: 70% confidence
+🌍 Climate target: 40% confidence
+
+#PredictionMarkets #Omen"
+
+Reply tweet:
+"Here's my reasoning:
+
+Bitcoin: Strong technical indicators + institutional adoption
+Election: Latest polls + historical trends
+Climate: Government commitments vs implementation challenges
+
+Full analysis: [link]"
+```
+
+### Configuration
+
+```bash
+# Required API keys
+FARCASTER_PRIVATE_KEY=...
+FARCASTER_FID=...
+TWITTER_API_KEY=...
+TWITTER_API_SECRET=...
+TWITTER_ACCESS_TOKEN=...
+TWITTER_ACCESS_TOKEN_SECRET=...
+```
+
+## Market Creators Stalker Agents
+
+Target markets created by specific whitelisted addresses.
+
+### Usage
+
+```bash
+# Using o1-preview model
+python prediction_market_agent/run_agent.py market_creators_stalker1 omen
+
+# Using GPT-4o model
+python prediction_market_agent/run_agent.py market_creators_stalker2 omen
+```
+
+### Implementation
+
+```python
+SPECIALIZED_FOR_MARKET_CREATORS = [
+    Web3.to_checksum_address("0xa7E93F5A0e718bDDC654e525ea668c64Fd572882"),
+]
+
+class MarketCreatorsStalkerAgent1(
+    GetMarketCreatorsStalkerMarkets, 
+    DeployablePredictionProphetGPTo1PreviewAgent
+):
+    bet_on_n_markets_per_run = MAX_AVAILABLE_MARKETS
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+    
+    def get_markets(
+        self, market_type: MarketType, sort_by: SortBy, filter_by: FilterBy
+    ) -> Sequence[OmenAgentMarket]:
+        return [
+            OmenAgentMarket.from_data_model(m)
+            for m in OmenSubgraphHandler().get_omen_markets_simple(
+                limit=self.n_markets_to_fetch,
+                sort_by=sort_by,
+                filter_by=filter_by,
+                creator_in=SPECIALIZED_FOR_MARKET_CREATORS,
+            )
+        ]
+```
+
+**Use Cases:**
+- Follow specific market creators who create high-quality markets
+- Target niche categories (sports, crypto, politics)
+- Bet on markets from trusted sources
+- Automated market-making for specific creators
+
+## Monitoring Agents
+
+### Omen Cleaner Agent
+
+```bash
+python prediction_market_agent/run_agent.py omen_cleaner omen
+```
+
+Monitors and potentially acts on:
+- Stale markets
+- Invalid markets
+- Markets with resolution issues
+- Duplicate markets
+
+### OFV Challenger Agent
+
+```bash
+python prediction_market_agent/run_agent.py ofv_challenger omen
+```
+
+Challenges incorrect reality.eth oracle resolutions.
+
+### Performance Alert Agent
+
+```bash
+python prediction_market_agent/run_agent.py performance_alert omen
+```
+
+Monitors agent performance and sends alerts via Slack:
+- Unexpected losses
+- Low accuracy
+- API failures
+- Budget alerts
+
+## Metaculus Tournament Agent
+
+Participates in Metaculus AI Bot tournaments.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py metaculus_bot_tournament_agent metaculus
+```
+
+### Implementation
+
+```python
+class DeployableMetaculusBotTournamentAgent(DeployablePredictionAgent):
+    bet_on_n_markets_per_run = sys.maxsize  # Predict on everything
+    tournament_id = TOURNAMENT_ID_Q4  # Current tournament
+    supported_markets = [MarketType.METACULUS]
+    
+    def load(self) -> None:
+        # Use best performing agent
+        self.agent = DeployablePredictionProphetGPTo1PreviewAgent(
+            enable_langfuse=self.enable_langfuse
+        )
+    
+    def get_markets(self, market_type: MarketType) -> Sequence[AgentMarket]:
+        return MetaculusAgentMarket.get_markets(
+            limit=self.bet_on_n_markets_per_run,
+            tournament_id=self.tournament_id,
+            filter_by=FilterBy.OPEN,
+            sort_by=SortBy.NEWEST,
+        )
+    
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        full_question = f"""Question: {market.question}
+        Description: {market.description}
+        Fine print: {market.fine_print}
+        Resolution criteria: {market.resolution_criteria}"""
+        
+        prediction = self.agent.agent.predict(full_question)
+        return prediction.outcome_prediction.to_probabilistic_answer()
+```
+
+**Key Features:**
+- Free predictions (no trading costs)
+- Predicts on all tournament questions
+- Uses full question context including resolution criteria
+- Leverages o1-preview for best accuracy
+- Tracks performance via Metaculus leaderboard
+
+## Replication Agents
+
+### Replicate to Omen Agent
+
+```bash
+python prediction_market_agent/run_agent.py replicate_to_omen omen
+```
+
+Replicates markets from other platforms (Polymarket, Manifold) to Omen:
+1. Monitors source platform for new markets
+2. Checks if similar market exists on Omen
+3. Creates market on Omen if not exists
+4. Optionally provides initial liquidity
+
+### Berlin Competition Agents
+
+```bash
+# Agent 1: Polysent sentiment analysis
+python prediction_market_agent/run_agent.py berlin1_polysent_agent omen
+
+# Agent 2: High confidence search-based
+python prediction_market_agent/run_agent.py berlin2_search_high omen
+
+# Agent 3: Variable confidence search-based
+python prediction_market_agent/run_agent.py berlin2_search_var omen
+```
+
+Agents developed for Berlin prediction market competition with specialized strategies.
+
+## Other Specialized Agents
+
+### Skew Agent
+
+```bash
+python prediction_market_agent/run_agent.py skew_agent omen
+```
+
+Bets against market skew (contrarian strategy).
+
+### LogProbs Agent
+
+```bash
+python prediction_market_agent/run_agent.py logprobs_agent omen
+```
+
+Uses LLM log probabilities directly for predictions instead of generating text.
+
+```python
+class DeployableLogProbsAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Get log probabilities for "Yes" and "No" tokens
+        logprobs = get_completion_with_logprobs(
+            prompt=f"Will this happen: {market.question}",
+            model="gpt-4o",
+        )
+        
+        yes_prob = exp(logprobs["Yes"])
+        no_prob = exp(logprobs["No"])
+        
+        # Normalize
+        p_yes = yes_prob / (yes_prob + no_prob)
+        
+        return ProbabilisticAnswer(
+            p_yes=Probability(p_yes),
+            confidence=0.7,
+            reasoning="Based on LLM log probabilities",
+        )
+```
+
+## Best Practices
+
+### Arbitrage Agent
+
+```python
+# Conservative settings
+arbitrage_agent = DeployableArbitrageAgent(
+    total_trade_amount=USD(0.1),  # Small bets
+    bet_on_n_markets_per_run=5,
+    enable_langfuse=True,  # Track correlation assessments
+)
+```
+
+### Social Media Agent
+
+```python
+# Post daily
+schedule.every().day.at("18:00").do(
+    lambda: DeployableSocialMediaAgent().run(MarketType.OMEN)
+)
+```
+
+### Monitoring Setup
+
+```python
+# Run every hour
+performance_agent = PerformanceAlertAgent(
+    alert_on_roi_below=-0.05,  # Alert if ROI < -5%
+    alert_on_accuracy_below=0.55,  # Alert if accuracy < 55%
+    slack_webhook_url=SLACK_WEBHOOK,
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Overview" icon="grid" href="/agents/overview">
+    Back to agent gallery
+  </Card>
+  <Card title="Simple Agents" icon="dice" href="/agents/simple-agents">
+    Start with basic agents
+  </Card>
+</CardGroup>

@@ -1,0 +1,472 @@
+---
+title: 'Search API'
+description: 'API reference for search tools including Google and Tavily'
+icon: 'magnifying-glass'
+---
+
+## Overview
+
+The prediction market agent supports multiple search engines for gathering information. Search tools are provided by the `prediction_market_agent_tooling` library and integrated into various agents.
+
+## Tavily Search
+
+### tavily_search
+
+Primary search function using Tavily's AI-powered search API. Optimized for research tasks and agent workflows.
+
+**Location:** `prediction_market_agent_tooling.tools.tavily.tavily_search`
+
+<ParamField path="query" type="str" required>
+  The search query string
+</ParamField>
+
+<ParamField path="search_depth" type="str" default="basic">
+  Search depth level: `"basic"` or `"advanced"`
+  
+  - **basic**: Faster, fewer results
+  - **advanced**: More thorough, includes additional sources
+</ParamField>
+
+<ParamField path="max_results" type="int" default="5">
+  Maximum number of search results to return
+</ParamField>
+
+<ResponseField name="return" type="TavilyResponse">
+  Response object containing search results
+  
+  **Structure:**
+  - `results` (list): List of search result objects
+    - `title` (str): Page title
+    - `url` (str): Page URL
+    - `content` (str): Relevant content snippet
+    - `score` (float): Relevance score
+</ResponseField>
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+
+response = tavily_search(
+    query="Will Bitcoin reach $100k by 2025?",
+    search_depth="basic",
+    max_results=5
+)
+
+for result in response.results:
+    print(f"{result.title}: {result.url}")
+```
+
+```python Microchain Agent
+from microchain import Function
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+
+class TavilySearch(Function):
+    @property
+    def description(self) -> str:
+        return "Use this function to do a Google search using Tavily search engine."
+
+    def __call__(self, query: str) -> str:
+        response = tavily_search(query=query, search_depth="basic")
+        results_as_text = "\n\n\n".join(
+            f"#{res.title}\n\n{res.content}" for res in response.results
+        )
+        return results_as_text
+```
+
+```python Known Outcome Agent
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+
+# Generate search query from market question
+search_query = llm.invoke(search_prompt).content.strip('"')
+
+# Search for relevant information
+search_results = tavily_search(query=search_query, max_results=5).results
+
+for result in search_results:
+    if result.url in previous_urls:
+        continue
+    previous_urls.append(result.url)
+    
+    # Scrape and analyze each result
+    scraped_content = web_scrape(url=result.url)
+```
+</CodeGroup>
+
+<Note>
+  Tavily search requires `TAVILY_API_KEY` environment variable to be set.
+</Note>
+
+---
+
+### TavilyResponse
+
+Response model for Tavily search results.
+
+**Location:** `prediction_market_agent_tooling.tools.tavily.tavily_models`
+
+<ResponseField name="results" type="list[TavilyResult]">
+  List of search result objects
+</ResponseField>
+
+<ResponseField name="query" type="str">
+  The original search query
+</ResponseField>
+
+#### TavilyResult
+
+Individual search result object.
+
+<ResponseField name="title" type="str">
+  Page title
+</ResponseField>
+
+<ResponseField name="url" type="str">
+  Page URL
+</ResponseField>
+
+<ResponseField name="content" type="str">
+  Relevant content excerpt from the page
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  Relevance score (0.0 to 1.0)
+</ResponseField>
+
+---
+
+## Google Search
+
+### search_google
+
+Google search integration using the tooling library.
+
+**Location:** `prediction_market_agent_tooling.tools.google`
+
+<ParamField path="query" type="str" required>
+  The search query
+</ParamField>
+
+<ResponseField name="return" type="list[str]">
+  List of URLs from search results
+</ResponseField>
+
+<CodeGroup>
+```python Basic Usage
+from prediction_market_agent_tooling.tools.google import search_google
+
+results = search_google("prediction markets 2025")
+for url in results:
+    print(url)
+```
+
+```python GoogleSearchTool
+from prediction_market_agent.tools.web_search.google import GoogleSearchTool
+
+tool = GoogleSearchTool()
+results = tool.fn("prediction markets")
+schema = tool.schema
+```
+</CodeGroup>
+
+---
+
+### GoogleSearchTool
+
+Function calling wrapper for Google search.
+
+**Location:** `prediction_market_agent.tools.web_search.google`
+
+#### Schema
+
+```python
+search_google_schema = {
+    "type": "function",
+    "function": {
+        "name": "search_google",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The google search query.",
+                }
+            },
+            "required": ["query"],
+        },
+        "description": "Google search to return search results from a query.",
+    },
+}
+```
+
+#### Usage
+
+```python
+from prediction_market_agent.tools.web_search.google import GoogleSearchTool
+
+tool = GoogleSearchTool()
+results = tool.fn(query="prediction markets")
+print(tool.schema)
+```
+
+---
+
+## Search in Agents
+
+### Think Thoroughly Agent
+
+Integrates Tavily search as a LangChain tool:
+
+<CodeGroup>
+```python think_thoroughly_agent.py
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+from langchain.tools import tool
+
+@tool("tavily_search_tool")
+def tavily_search_tool(query: str) -> list[dict[str, str]]:
+    """Search the web for information on a topic."""
+    output = tavily_search(query=query)
+    return [
+        {
+            "title": result.title,
+            "url": result.url,
+            "content": result.content,
+        }
+        for result in output.results
+    ]
+
+# Use in agent
+agent = create_react_agent(
+    model=llm,
+    tools=[tavily_search_tool],
+    state_modifier=system_message,
+)
+```
+</CodeGroup>
+
+### Prophet Research Integration
+
+Search is integrated into the research workflow:
+
+<CodeGroup>
+```python prophet_research.py
+from prediction_market_agent.tools.prediction_prophet.research import prophet_research
+from pydantic_ai import Agent
+
+research = prophet_research(
+    goal="Will Bitcoin reach $100k?",
+    agent=Agent(...),
+    openai_api_key=api_keys.openai_api_key,
+    tavily_api_key=api_keys.tavily_api_key,
+    subqueries_limit=4,
+    max_results_per_search=5,
+    min_scraped_sites=10,
+)
+
+print(research.report)
+```
+</CodeGroup>
+
+---
+
+## Configuration
+
+### Environment Variables
+
+<ParamField path="TAVILY_API_KEY" type="str" required>
+  API key for Tavily search service
+  
+  Get your key at [tavily.com](https://tavily.com)
+</ParamField>
+
+<ParamField path="GOOGLE_API_KEY" type="str">
+  Google Custom Search API key (if using Google search)
+</ParamField>
+
+<ParamField path="GOOGLE_SEARCH_ENGINE_ID" type="str">
+  Google Custom Search Engine ID
+</ParamField>
+
+### API Keys Class
+
+```python
+from prediction_market_agent.utils import APIKeys
+
+keys = APIKeys()
+tavily_key = keys.tavily_api_key  # Returns SecretStr
+```
+
+---
+
+## Search Strategies
+
+### Basic Search Strategy
+
+<Steps>
+  <Step title="Generate Query">
+    Use LLM to generate targeted search query from market question
+  </Step>
+  <Step title="Execute Search">
+    Call `tavily_search` with appropriate parameters
+  </Step>
+  <Step title="Filter Results">
+    Remove duplicate URLs and irrelevant sources
+  </Step>
+  <Step title="Scrape Content">
+    Use web scraping tools to extract content from result URLs
+  </Step>
+  <Step title="Analyze">
+    Feed content to LLM for analysis
+  </Step>
+</Steps>
+
+### Advanced Research Strategy
+
+<CodeGroup>
+```python research_workflow.py
+from prediction_market_agent.tools.prediction_prophet.research import prophet_research
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+# Configure research agent
+research_agent = Agent(
+    OpenAIModel(
+        "gpt-4o-2024-08-06",
+        provider=get_openai_provider(api_key=api_keys.openai_api_key),
+    ),
+    model_settings=ModelSettings(temperature=0.7),
+)
+
+# Perform thorough research
+research = prophet_research(
+    goal=market.question,
+    agent=research_agent,
+    openai_api_key=api_keys.openai_api_key,
+    tavily_api_key=api_keys.tavily_api_key,
+    initial_subqueries_limit=20,
+    subqueries_limit=4,
+    max_results_per_search=5,
+    min_scraped_sites=10,
+)
+```
+</CodeGroup>
+
+---
+
+## Search Depth Comparison
+
+<CardGroup cols={2}>
+  <Card title="Basic Search" icon="gauge-simple">
+    **Use for:**
+    - Quick lookups
+    - Simple queries
+    - Cost optimization
+    - Real-time agent responses
+    
+    **Characteristics:**
+    - Faster execution
+    - Lower cost
+    - Fewer sources
+    - Good for straightforward questions
+  </Card>
+  
+  <Card title="Advanced Search" icon="gauge-high">
+    **Use for:**
+    - Complex research
+    - Important predictions
+    - Multi-source verification
+    - Deep analysis
+    
+    **Characteristics:**
+    - Slower execution
+    - Higher cost
+    - More comprehensive
+    - Better for nuanced questions
+  </Card>
+</CardGroup>
+
+---
+
+## Error Handling
+
+<Warning>
+  Search functions can fail due to:
+  - Invalid API keys
+  - Rate limiting
+  - Network errors
+  - No results found
+</Warning>
+
+<CodeGroup>
+```python error_handling.py
+from prediction_market_agent_tooling.tools.tavily.tavily_search import tavily_search
+
+try:
+    results = tavily_search(query="...", max_results=5)
+    if not results.results:
+        print("No results found")
+        return None
+except Exception as e:
+    print(f"Search failed: {e}")
+    return None
+```
+
+```python validation.py
+from prediction_market_agent.utils import APIKeys
+
+# Validate API keys before searching
+keys = APIKeys()
+try:
+    tavily_key = keys.tavily_api_key
+    print("Tavily API key configured")
+except Exception as e:
+    print(f"Missing TAVILY_API_KEY: {e}")
+```
+</CodeGroup>
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Cost Management" icon="dollar-sign">
+    - Use basic search for most queries
+    - Reserve advanced search for critical predictions
+    - Cache search results when possible
+    - Implement rate limiting
+  </Card>
+  
+  <Card title="Query Optimization" icon="wand-magic-sparkles">
+    - Use LLM to generate targeted queries
+    - Include date ranges for time-sensitive questions
+    - Filter out prediction market URLs to avoid circular references
+  </Card>
+  
+  <Card title="Result Processing" icon="filter">
+    - Deduplicate URLs across searches
+    - Track previously scraped URLs
+    - Validate URLs before scraping
+    - Handle failed scrapes gracefully
+  </Card>
+  
+  <Card title="Performance" icon="rocket">
+    - Limit max_results based on needs
+    - Use parallel scraping when possible
+    - Implement timeouts for slow sources
+    - Cache frequently accessed results
+  </Card>
+</CardGroup>
+
+---
+
+## Dependencies
+
+```bash
+pip install tavily-python httpx
+```
+
+## See Also
+
+- [Web Scraping API](/api/tools/web-scraping) - For scraping search result URLs
+- [Prophet Research](/tools/research) - Integrated research workflow
+- [LLM Utils API](/api/tools/llm-utils) - For processing search results

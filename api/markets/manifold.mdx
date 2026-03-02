@@ -1,0 +1,324 @@
+---
+title: 'Manifold Market API'
+description: 'API reference for Manifold prediction market integration'
+---
+
+## Overview
+
+Manifold is a play-money prediction market platform that allows users to create and trade on markets using Mana (M$), the platform's virtual currency. The Manifold market API provides access to a wide variety of user-generated prediction markets.
+
+## MarketType Enum
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+market_type = MarketType.MANIFOLD
+```
+
+## Market Class
+
+### ManifoldAgentMarket
+
+The `ManifoldAgentMarket` class extends `AgentMarket` and provides Manifold-specific functionality.
+
+```python
+from prediction_market_agent_tooling.markets.manifold.manifold import ManifoldAgentMarket
+```
+
+## Core Methods
+
+### Get Markets
+
+Retrieve available prediction markets from Manifold.
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import FilterBy, SortBy
+
+markets = ManifoldAgentMarket.get_markets(
+    limit=50,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.NEWEST
+)
+```
+
+<ParamField path="limit" type="int">
+  Maximum number of markets to retrieve (default: 500)
+</ParamField>
+
+<ParamField path="filter_by" type="FilterBy">
+  Filter markets by status (OPEN, RESOLVED, etc.)
+</ParamField>
+
+<ParamField path="sort_by" type="SortBy">
+  Sort order (NEWEST, CLOSING_SOONEST, etc.)
+</ParamField>
+
+<ResponseField name="markets" type="list[ManifoldAgentMarket]">
+  List of market objects matching the query criteria
+</ResponseField>
+
+### Get Binary Market
+
+Retrieve a specific binary market by ID.
+
+```python
+market = ManifoldAgentMarket.get_binary_market(
+    id="manifold-market-id"
+)
+```
+
+<ParamField path="id" type="str" required>
+  Manifold market ID (alphanumeric string)
+</ParamField>
+
+<ResponseField name="market" type="ManifoldAgentMarket">
+  Market object containing question, probabilities, and trading information
+</ResponseField>
+
+### Buy Tokens
+
+Purchase outcome tokens for a market.
+
+```python
+market.buy_tokens(
+    outcome="Yes",
+    amount=USD(10)  # In Mana (M$)
+)
+```
+
+<ParamField path="outcome" type="str" required>
+  Outcome to bet on ("Yes" or "No" for binary markets)
+</ParamField>
+
+<ParamField path="amount" type="USD" required>
+  Amount to spend in Mana (M$)
+</ParamField>
+
+### Get Trade Balance
+
+Get available Mana balance for trading.
+
+```python
+balance = ManifoldAgentMarket.get_trade_balance(api_keys)
+```
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys containing Manifold credentials
+</ParamField>
+
+<ResponseField name="balance" type="USD">
+  Available Mana balance for trading
+</ResponseField>
+
+## Market Data Model
+
+### Market Properties
+
+<ResponseField name="id" type="str">
+  Manifold market ID
+</ResponseField>
+
+<ResponseField name="question" type="str">
+  Market question text
+</ResponseField>
+
+<ResponseField name="description" type="str | None">
+  Market description with resolution criteria
+</ResponseField>
+
+<ResponseField name="outcomes" type="list[str]">
+  Available outcomes (e.g., ["Yes", "No"] for binary markets)
+</ResponseField>
+
+<ResponseField name="p_yes" type="Probability">
+  Current probability of "Yes" outcome (0.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="volume" type="USD | None">
+  Total trading volume in Mana
+</ResponseField>
+
+<ResponseField name="close_time" type="DatetimeUTC | None">
+  When the market closes for trading
+</ResponseField>
+
+<ResponseField name="created_time" type="DatetimeUTC | None">
+  When the market was created
+</ResponseField>
+
+<ResponseField name="url" type="str">
+  Direct link to the market on Manifold
+</ResponseField>
+
+<ResponseField name="is_open" type="bool">
+  Whether the market is currently open for trading
+</ResponseField>
+
+<ResponseField name="resolution" type="str | None">
+  Final resolution outcome (if resolved)
+</ResponseField>
+
+## Manifold-Specific Features
+
+### Play Money System
+
+Manifold uses Mana (M$), a play-money currency. All trades are in Mana, which has no real-world value.
+
+```python
+# Amounts are specified in Mana
+market.buy_tokens(outcome="Yes", amount=USD(100))  # 100 Mana
+```
+
+### Market Types
+
+Manifold supports multiple market types:
+- **Binary**: Yes/No questions
+- **Multiple Choice**: Several possible outcomes
+- **Free Response**: Users can submit answers
+- **Numeric**: Predicting a numeric value
+
+### Question Rephrasing
+
+Manifold allows market creators to rephrase questions, which can affect market tracking.
+
+```python
+# Markets may have updated questions
+original_question = "Original question text"
+# Creator updates it later
+market.question  # May be different from original
+```
+
+## Real-World Examples
+
+### Replication Source
+
+Manifold is commonly used as a source for replicating markets to other platforms.
+
+```python
+from prediction_market_agent.agents.replicate_to_omen_agent.deploy import (
+    DeployableReplicateToOmenAgent,
+)
+
+class DeployableReplicateToOmenAgent(DeployableAgent):
+    def run(self, market_type: MarketType = MarketType.MANIFOLD) -> None:
+        # Fetches markets from Manifold to replicate to Omen
+        markets = get_binary_markets(
+            1000,
+            MarketType.MANIFOLD,
+            filter_by=FilterBy.OPEN,
+            sort_by=SortBy.CLOSING_SOONEST
+        )
+```
+
+### Benchmarking Agent Performance
+
+Manifold is used for agent benchmarking due to its large number of markets.
+
+```python
+# From think_thoroughly_agent benchmark
+reference_markets = get_binary_markets(
+    n=100,
+    market_type=MarketType.MANIFOLD,
+    filter_by=FilterBy.RESOLVED,
+    sort_by=SortBy.NEWEST
+)
+```
+
+### Basic Trading Agent
+
+```python
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+
+class MyManifoldAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Implement prediction logic
+        return ProbabilisticAnswer(
+            p_yes=Probability(0.6),
+            confidence=0.75
+        )
+
+# Run on Manifold
+agent = MyManifoldAgent()
+agent.run(market_type=MarketType.MANIFOLD)
+```
+
+## Platform Details
+
+- **Currency**: Mana (M$) - play money
+- **Website**: https://manifold.markets
+- **API Docs**: https://docs.manifold.markets/api
+- **Market Types**: Binary, Multiple Choice, Free Response, Numeric
+- **Market Creation**: Free and open to all users
+- **Resolution**: Creator resolves markets
+
+## Filtering and Sorting
+
+### Filter Options
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import FilterBy
+
+# Available filters
+FilterBy.OPEN       # Only open markets
+FilterBy.RESOLVED   # Only resolved markets
+```
+
+### Sort Options
+
+```python
+from prediction_market_agent_tooling.markets.agent_market import SortBy
+
+# Available sort orders
+SortBy.NEWEST           # Recently created
+SortBy.CLOSING_SOONEST  # Closing soon
+SortBy.NONE             # Default order
+```
+
+## Resolved Markets
+
+Access resolved markets for backtesting and evaluation.
+
+```python
+resolved_markets = ManifoldAgentMarket.get_markets(
+    limit=100,
+    filter_by=FilterBy.RESOLVED,
+    sort_by=SortBy.NEWEST
+)
+
+for market in resolved_markets:
+    print(f"Question: {market.question}")
+    print(f"Resolution: {market.resolution}")
+    print(f"Final probability: {market.p_yes}")
+```
+
+## Advantages
+
+- **Large Market Volume**: Thousands of active markets
+- **Diverse Topics**: Wide range of prediction topics
+- **Low Barrier**: Play money means no financial risk
+- **Active Community**: Strong user engagement
+- **API Access**: Well-documented REST API
+
+## Limitations
+
+- **Play Money Only**: No real financial incentives
+- **Question Changes**: Creators can rephrase questions
+- **Resolution Trust**: Relies on creator to resolve fairly
+- **No Trading Fees**: Different dynamics from real-money markets
+
+## Error Handling
+
+```python
+try:
+    market = ManifoldAgentMarket.get_binary_market(id=market_id)
+    market.buy_tokens(outcome="Yes", amount=USD(50))
+except Exception as e:
+    logger.error(f"Manifold API error: {e}")
+```
+
+## See Also
+
+- [Omen Market API](/api/markets/omen)
+- [Polymarket Market API](/api/markets/polymarket)
+- [Metaculus Market API](/api/markets/metaculus)

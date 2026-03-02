@@ -1,0 +1,461 @@
+---
+title: Prophet Agents
+description: LLM-powered agents using Prediction Prophet framework with GPT-4, Claude, Gemini, DeepSeek, and more
+---
+
+Prophet agents use the [Prediction Prophet](https://github.com/gnosis/prediction-prophet) framework to make research-backed predictions using state-of-the-art language models.
+
+## Model Variants
+
+Prophet agents are available with multiple LLM backends:
+
+<CardGroup cols={3}>
+  <Card title="OpenAI GPT" icon="openai">
+    GPT-4o, GPT-4 Turbo, o1, o3-mini variants
+  </Card>
+  <Card title="Anthropic Claude" icon="cloud">
+    Claude 3 Opus, 3.5 Haiku, 3.5 Sonnet
+  </Card>
+  <Card title="Google Gemini" icon="google">
+    Gemini 2.0 Flash via OpenRouter
+  </Card>
+  <Card title="DeepSeek" icon="robot">
+    DeepSeek R1, DeepSeek Chat
+  </Card>
+  <Card title="OLAS Embedding" icon="layer-group">
+    Embedding-based similarity agent
+  </Card>
+  <Card title="Specialized" icon="star">
+    Categorical, scalar, new market variants
+  </Card>
+</CardGroup>
+
+## OpenAI Prophet Agents
+
+### GPT-4o Agent (Primary)
+
+The flagship agent using GPT-4o with full Kelly betting strategy.
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o omen
+```
+
+**Configuration:**
+
+```python
+class DeployablePredictionProphetGPT4oAgent(DeployableTraderAgentER):
+    bet_on_n_markets_per_run = 4
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(5), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.7,
+        )
+    
+    def load(self) -> None:
+        model = "gpt-4o-2024-08-06"
+        self.agent = PredictionProphetAgent(
+            research_agent=Agent(OpenAIModel(model), model_settings=ModelSettings(temperature=0.7)),
+            prediction_agent=Agent(OpenAIModel(model), model_settings=ModelSettings(temperature=0.0)),
+            include_reasoning=True,
+        )
+```
+
+**Key Features:**
+- 4 markets per run
+- $1-$5 bet range
+- 70% max price impact
+- Dual-agent architecture (research + prediction)
+- Research at temp 0.7, prediction at temp 0.0
+
+### GPT-4o Variants
+
+**GPT-4o Agent B** - Cost optimized with fewer searches:
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o_b omen
+```
+
+```python
+PredictionProphetAgent(
+    subqueries_limit=3,  # Reduced from default 5
+    min_scraped_sites=3,  # Reduced from default 5
+)
+```
+
+**GPT-4o Agent C** - No take-profit strategy:
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o_c omen
+```
+
+```python
+FullBinaryKellyBettingStrategy(
+    take_profit=False,  # Hold positions until resolution
+)
+```
+
+### o1/o3 Series Agents
+
+**o1 Agent** - Using OpenAI's reasoning model:
+
+```bash
+python prediction_market_agent/run_agent.py prophet_o1 omen
+```
+
+```python
+class DeployablePredictionProphetGPTo1(DeployableTraderAgentER):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(4), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.418,
+        )
+    
+    def load(self) -> None:
+        model = "o1-2024-12-17"
+        # o1 requires temperature=1.0
+        self.agent = PredictionProphetAgent(
+            research_agent=Agent(OpenAIModel(model), model_settings=ModelSettings(temperature=1.0)),
+            prediction_agent=Agent(OpenAIModel(model), model_settings=ModelSettings(temperature=1.0)),
+        )
+```
+
+**Available o-series agents:**
+- `prophet_o1` - Full o1 model ($1-$4, 41.8% price impact)
+- `prophet_o1mini` - Smaller o1 variant (now uses o4-mini)
+- `prophet_o1preview` - Preview version (now uses o3)
+- `prophet_o3mini` - Latest o3-mini ($0.50-$1, max expected value strategy)
+
+### GPT-4 Turbo Agents
+
+```bash
+# GPT-4 Turbo Preview
+python prediction_market_agent/run_agent.py prophet_gpt4 omen
+
+# GPT-4 Turbo Final
+python prediction_market_agent/run_agent.py prophet_gpt4_final omen
+```
+
+Using `gpt-4-0125-preview` and `gpt-4-turbo-2024-04-09` respectively.
+
+### GPT-4o-mini Agent
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4omini omen
+```
+
+Cost-effective variant using `gpt-4o-mini-2024-07-18`. Currently uses conservative betting (not yet optimized for profitability).
+
+## Anthropic Claude Agents
+
+### Claude 3.5 Sonnet (Best Performing)
+
+```bash
+python prediction_market_agent/run_agent.py prophet_claude35_sonnet omen
+```
+
+```python
+class DeployablePredictionProphetClaude35SonnetAgent(DeployableTraderAgentER):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(4.77), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.63,
+        )
+    
+    def load(self) -> None:
+        model = "claude-3-5-sonnet-20241022"
+        self.agent = PredictionProphetAgent(
+            research_agent=Agent(
+                AnthropicModel(model, provider=AnthropicProvider(api_key=api_keys.anthropic_api_key)),
+                model_settings=ModelSettings(temperature=0.7),
+            ),
+            prediction_agent=Agent(
+                AnthropicModel(model, provider=AnthropicProvider(api_key=api_keys.anthropic_api_key)),
+                model_settings=ModelSettings(temperature=0.0),
+            ),
+        )
+```
+
+### Other Claude Variants
+
+```bash
+# Claude 3 Opus
+python prediction_market_agent/run_agent.py prophet_claude3_opus omen
+
+# Claude 3.5 Haiku  
+python prediction_market_agent/run_agent.py prophet_claude35_haiku omen
+```
+
+## Google Gemini Agent
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gemini20flash omen
+```
+
+```python
+class DeployablePredictionProphetGemini20Flash(DeployableTraderAgentProphetOpenRouter):
+    bet_on_n_markets_per_run = 4
+    model = "google/gemini-2.0-flash-001"
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(5.95), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=1.38,
+        )
+```
+
+Uses OpenRouter for Gemini access.
+
+## DeepSeek Agents
+
+### DeepSeek Chat
+
+```bash
+python prediction_market_agent/run_agent.py prophet_deepseekchat omen
+```
+
+```python
+class DeployablePredictionProphetDeepSeekChat(DeployableTraderAgentProphetOpenRouter):
+    model = "deepseek/deepseek-chat"
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(5), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.7,
+        )
+```
+
+### DeepSeek R1 (Suspended)
+
+```bash
+python prediction_market_agent/run_agent.py prophet_deepseekr1 omen
+```
+
+**Warning:** This agent ran out of funds and is currently suspended.
+
+```python
+class DeployablePredictionProphetDeepSeekR1(DeployableTraderAgentProphetOpenRouter):
+    model = "deepseek/deepseek-r1"
+    just_warn_on_unexpected_model_behavior = True
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return CategoricalMaxAccuracyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1), max_=USD(6.5), trading_balance=market.get_trade_balance(APIKeys())
+            )
+        )
+```
+
+## OLAS Embedding Agent
+
+```bash
+python prediction_market_agent/run_agent.py olas_embedding_oa omen
+```
+
+```python
+class DeployableOlasEmbeddingOAAgent(DeployableTraderAgentER):
+    agent: OlasAgent
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1), max_=USD(6), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.733,
+        )
+    
+    def load(self) -> None:
+        self.agent = OlasAgent(
+            research_agent=Agent(OpenAIModel(model)),
+            prediction_agent=Agent(OpenAIModel(model)),
+            embedding_model=EmbeddingModel.openai,
+        )
+```
+
+Uses embeddings for finding similar historical markets and predictions.
+
+## Specialized Prophet Variants
+
+### Categorical Markets
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o_categorical omen
+```
+
+```python
+class DeployablePredictionProphetGPT4oAgentCategorical(DeployableTraderAgentERCategorical):
+    def answer_categorical_market(
+        self, market: AgentMarket
+    ) -> CategoricalProbabilisticAnswer | None:
+        prediction = self.agent.predict_categorical(market.question, market.outcomes)
+        return prediction.outcome_prediction
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullCategoricalKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.01), max_=USD(0.75), trading_balance=market.get_trade_balance(APIKeys())
+            ),
+            max_price_impact=0.068,
+            allow_multiple_bets=False,
+            allow_shorting=False,
+        )
+```
+
+### Scalar Markets
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o_scalar omen
+```
+
+```python
+class DeployablePredictionProphetGPT4oAgentScalar(DeployableTraderAgentERScalar):
+    def answer_scalar_market(
+        self, market: AgentMarket
+    ) -> ScalarProbabilisticAnswer | None:
+        prediction = self.agent.predict_scalar(
+            market.question, market.upper_bound, market.lower_bound
+        )
+        return prediction.outcome_prediction
+```
+
+### New Market Trader
+
+```bash
+python prediction_market_agent/run_agent.py prophet_gpt4o_new_market_trader omen
+```
+
+```python
+class DeployablePredictionProphetGPT4oAgentNewMarketTrader(
+    DeployablePredictionProphetGPT4oAgent
+):
+    trade_on_markets_created_after = DatetimeUTC(2024, 10, 31, 0)
+    get_markets_sort_by = SortBy.NEWEST
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+    
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        # Check if there's relevant news since last trade
+        last_trade_datetime = market.get_most_recent_trade_datetime(user_id=user_id)
+        if last_trade_datetime is None:
+            return True
+        
+        news = get_certified_relevant_news_since_cached(
+            question=market.question,
+            days_ago=(utcnow() - last_trade_datetime).days,
+            cache=self.relevant_news_response_cache,
+        )
+        return news is not None
+```
+
+Trades on new markets and re-evaluates when relevant news is published.
+
+## Prophet Agent Architecture
+
+### Dual Agent System
+
+All Prophet agents use two separate LLM instances:
+
+```python
+PredictionProphetAgent(
+    research_agent=Agent(..., temperature=0.7),  # Creative research
+    prediction_agent=Agent(..., temperature=0.0),  # Deterministic prediction
+)
+```
+
+### Research Process
+
+1. **Subquery Generation**: Break question into searchable components
+2. **Web Search**: Use Tavily to find relevant sources
+3. **Content Scraping**: Extract information from top results
+4. **Evidence Synthesis**: Combine findings into coherent analysis
+5. **Probability Estimation**: Generate final prediction with reasoning
+
+### Configuration Parameters
+
+```python
+PredictionProphetAgent(
+    subqueries_limit=5,  # Number of search queries
+    min_scraped_sites=5,  # Minimum sites to scrape
+    include_reasoning=True,  # Include explanation
+    logger=logger,  # Custom logger
+)
+```
+
+## Performance Comparison
+
+| Model | Bet Range | Max Price Impact | Status | Notes |
+|-------|-----------|------------------|--------|-------|
+| GPT-4o | $1-$5 | 70% | Active | Best balanced |
+| GPT-4o-mini | Tiny | - | Testing | Not profitable yet |
+| o1 | $1-$4 | 41.8% | Active | Advanced reasoning |
+| o3-mini | $0.50-$1 | - | Active | Max EV strategy |
+| Claude 3.5 Sonnet | $1-$4.77 | 63% | Active | High performance |
+| Claude 3.5 Haiku | Tiny | - | Testing | Not profitable yet |
+| Gemini 2.0 Flash | $1-$5.95 | 138% | Active | Categorical focus |
+| DeepSeek Chat | $1-$5 | 70% | Active | Cost-effective |
+| DeepSeek R1 | $1-$6.50 | - | Suspended | Out of funds |
+
+## Best Practices
+
+### Model Selection
+
+```python
+# Production: GPT-4o or Claude 3.5 Sonnet
+agent = DeployablePredictionProphetGPT4oAgent(enable_langfuse=True)
+
+# Cost-sensitive: DeepSeek Chat or GPT-4o-mini
+agent = DeployablePredictionProphetDeepSeekChat()
+
+# Advanced reasoning: o1 or o3-mini
+agent = DeployablePredictionProphetGPTo1()
+```
+
+### API Keys
+
+```bash
+# OpenAI agents
+OPENAI_API_KEY=sk-...
+
+# Claude agents  
+ANTHROPIC_API_KEY=sk-ant-...
+
+# OpenRouter agents (Gemini, DeepSeek)
+OPENROUTER_API_KEY=sk-or-...
+
+# Research APIs
+TAVILY_API_KEY=tvly-...
+```
+
+### Cost Optimization
+
+```python
+# Reduce API costs
+PredictionProphetAgent(
+    subqueries_limit=3,  # Fewer searches
+    min_scraped_sites=3,  # Fewer sites
+)
+
+# Or use cheaper models
+DeployablePredictionProphetGPT4ominiAgent()  # ~90% cheaper than GPT-4o
+DeployablePredictionProphetDeepSeekChat()  # Even cheaper via OpenRouter
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Microchain Agents" icon="link" href="/agents/microchain-agents">
+    Explore self-learning agents
+  </Card>
+  <Card title="Specialized Agents" icon="star" href="/agents/specialized-agents">
+    Learn about purpose-built agents
+  </Card>
+</CardGroup>

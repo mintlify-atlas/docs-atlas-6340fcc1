@@ -1,0 +1,547 @@
+---
+title: Hackathon Quickstart Guide
+description: Fast-track guide for hackathon participants to build prediction market agents
+---
+
+## Welcome Hackathon Participants!
+
+This guide helps you quickly get started building prediction market agents. Whether you're at a hackathon or just want a fast path to creating your first agent, this is your starting point.
+
+## What Are Prediction Markets?
+
+Prediction markets allow people to trade on the outcome of future events. Participants buy and sell shares representing different outcomes, and prices reflect the crowd's probability estimates.
+
+Learn more: [What are Prediction Markets?](https://support.metamask.io/manage-crypto/trade/predict/what-are-prediction-markets)
+
+## Quick Setup
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install the repository with Poetry (Python >=3.11):
+    
+    ```bash
+    python3.11 -m pip install poetry
+    python3.11 -m poetry install
+    python3.11 -m poetry shell
+    ```
+  </Step>
+  
+  <Step title="Configure Environment">
+    Copy `.env.example` to `.env` and add your API keys:
+    
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+  
+  <Step title="Get API Keys">
+    Obtain the following API keys (most are free):
+  </Step>
+</Steps>
+
+## Required API Keys
+
+<AccordionGroup>
+  <Accordion title="GRAPH_API_KEY - Required">
+    **What it does**: Query prediction market data
+    
+    **Get it from**: [https://thegraph.com](https://thegraph.com) (free)
+    
+    **Setup**:
+    1. Create account at The Graph
+    2. Navigate to API Keys section
+    3. Create new API key
+    4. Add to `.env`: `GRAPH_API_KEY=your_key_here`
+  </Accordion>
+  
+  <Accordion title="SERPER_API_KEY - Required">
+    **What it does**: Google search functionality for research
+    
+    **Get it from**: [https://serper.dev](https://serper.dev) (free tier available)
+    
+    **Setup**:
+    1. Sign up at Serper.dev
+    2. Copy your API key from dashboard
+    3. Add to `.env`: `SERPER_API_KEY=your_key_here`
+  </Accordion>
+  
+  <Accordion title="FIRECRAWL_API_KEY - Required">
+    **What it does**: Web scraping for gathering evidence
+    
+    **Get it from**: [https://www.firecrawl.dev](https://www.firecrawl.dev) (free tier available)
+    
+    **Setup**:
+    1. Create account at Firecrawl
+    2. Get API key from dashboard
+    3. Add to `.env`: `FIRECRAWL_API_KEY=your_key_here`
+  </Accordion>
+  
+  <Accordion title="OPENAI_API_KEY - Required">
+    **What it does**: LLM calls for making predictions
+    
+    **Get it from**: 
+    - For hackathon: [Join Discord](https://discord.gg/AsnV6nCvpx) and ask organizers
+    - Otherwise: [https://platform.openai.com](https://platform.openai.com)
+    
+    **Setup**:
+    Add to `.env`: `OPENAI_API_KEY=sk-...`
+  </Accordion>
+  
+  <Accordion title="BET_FROM_PRIVATE_KEY - Required">
+    **What it does**: Wallet private key for placing bets on Gnosis Chain
+    
+    **Setup**:
+    1. Install [MetaMask](https://metamask.io/)
+    2. Create new wallet or use existing
+    3. Add Gnosis Chain network to MetaMask:
+       - Click network selector (top left)
+       - Click "Add a custom network"
+       - Enter details:
+         - **Name**: Gnosis Chain
+         - **RPC URL**: https://rpc.gnosischain.com
+         - **Chain ID**: 100
+         - **Symbol**: XDAI
+    4. Export private key from MetaMask:
+       - Click account menu
+       - Account details > Export private key
+    5. Get xDai funds:
+       - For hackathon: Ask organizers in [Discord](https://discord.gg/AsnV6nCvpx)
+       - Otherwise: Bridge from Ethereum mainnet
+    6. Add to `.env`: `BET_FROM_PRIVATE_KEY=0x...`
+    
+    <Warning>
+    Never share your private key or commit it to version control!
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="MANIFOLD_API_KEY - For Benchmarking">
+    **What it does**: Run benchmarks against Manifold markets
+    
+    **Get it from**: [https://manifold.markets](https://manifold.markets) (free)
+    
+    **Setup**:
+    1. Create account at Manifold
+    2. Go to Settings > API
+    3. Generate new API key
+    4. Add to `.env`: `MANIFOLD_API_KEY=your_key_here`
+  </Accordion>
+</AccordionGroup>
+
+## Running Your First Agent
+
+Once configured, run an existing agent to test your setup:
+
+<CodeGroup>
+```bash CoinFlip Agent (Simple)
+python prediction_market_agent/run_agent.py coinflip omen
+```
+
+```bash Advanced Agent (Better predictions)
+python prediction_market_agent/run_agent.py advanced_agent omen
+```
+
+```bash Your Custom Agent
+# After creating your agent and adding to run_agent.py
+python prediction_market_agent/run_agent.py your_agent omen
+```
+</CodeGroup>
+
+## The Task
+
+**Goal**: Implement new logic for trading on prediction markets that gets good predictions for cheap.
+
+**Success Criteria**: 
+- Accuracy >50% (better than random)
+- Cost-effective (considering API costs, LLM calls, etc.)
+- Bonus points for creativity and novel approaches!
+
+## Recommended Steps
+
+<Steps>
+  <Step title="Study the Simplest Agent">
+    Look at `prediction_market_agent/agents/coinflip_agent/deploy.py` - this is the simplest possible agent:
+    
+    ```python
+    class DeployableCoinFlipAgent(DeployableTraderAgent):
+        def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+            return True
+
+        def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+            decision = random.choice([True, False])
+            return ProbabilisticAnswer(
+                confidence=0.5,
+                p_yes=Probability(float(decision)),
+                reasoning="I flipped a coin to decide.",
+            )
+    ```
+    
+    **Run it**:
+    ```bash
+    python prediction_market_agent/run_agent.py coinflip omen
+    ```
+    
+    Watch the logs to understand how agents work.
+  </Step>
+  
+  <Step title="Study the Advanced Agent">
+    Examine `prediction_market_agent/agents/advanced_agent/deploy.py` - this agent actually retrieves information from the web:
+    
+    **Key features**:
+    - Searches Google for relevant information
+    - Scrapes content from top URLs
+    - Uses LLM to analyze and predict
+    
+    **Run it**:
+    ```bash
+    python prediction_market_agent/run_agent.py advanced_agent omen
+    ```
+    
+    This agent performs much better than CoinFlip because it uses real data.
+  </Step>
+  
+  <Step title="Study a Top Performer">
+    Look at [DeployablePredictionProphetGPT4oAgent](https://github.com/gnosis/prediction-market-agent/blob/main/prediction_market_agent/agents/prophet_agent/deploy.py#L46) - one of the best agents:
+    
+    **Performance**:
+    - 60% success rate
+    - $834.73 in profits
+    - Top of the [leaderboard](https://presagio.pages.dev/leaderboard/agents)
+    
+    **Try it**:
+    - Test in [Streamlit demo](https://pma-agent.ai.gnosisdev.com/?free_access_code=devcon)
+    - See predictions and reasoning in real-time
+    - Analyze on [Dune Dashboard](https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets)
+  </Step>
+  
+  <Step title="Create Your Agent">
+    Modify the advanced agent or create your own:
+    
+    **Ideas to try**:
+    - Change LLM prompts
+    - Add more data sources (Twitter, news APIs, etc.)
+    - Implement specialized logic for certain market types
+    - Use different models (Claude, Gemini, etc.)
+    - Add caching to reduce costs
+    - Implement multi-step reasoning
+    
+    **Remember**: POCs with strong hypotheses are welcome if you don't have time for full evaluation!
+  </Step>
+</Steps>
+
+## Example: Modifying the Advanced Agent
+
+Here's how to create your own agent based on AdvancedAgent:
+
+```python prediction_market_agent/agents/your_agent/deploy.py
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.gtypes import Probability
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+from prediction_market_agent.utils import APIKeys
+
+
+class YourCustomAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 3
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # 1. Search for information
+        urls = search_google_serper(market.question)
+        
+        # 2. Filter and scrape
+        contents = []
+        for url in urls[:5]:
+            if "manifold" not in url:  # Skip copy-paste results
+                if scraped := web_scrape(url):
+                    contents.append(scraped[:5000])  # Limit length
+        
+        if not contents:
+            return None
+        
+        # 3. Your custom analysis logic here!
+        # Example: Use a better prompt
+        probability, confidence = self.analyze_with_llm(
+            market.question, 
+            contents
+        )
+        
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+            reasoning=f"Analyzed {len(contents)} sources",
+        )
+    
+    def analyze_with_llm(self, question: str, contents: list[str]) -> tuple[float, float]:
+        agent = Agent(
+            OpenAIModel(
+                "gpt-4o-mini",
+                provider=get_openai_provider(api_key=APIKeys().openai_api_key),
+            ),
+            system_prompt="You are an expert prediction market analyst.",
+        )
+        
+        # Your custom prompt engineering here!
+        result = agent.run_sync(
+            f"""Question: {question}
+            
+Evidence from web:
+{chr(10).join(contents)}
+
+Analyze the evidence and provide:
+1. Probability (0.0-1.0) that the answer is YES
+2. Your confidence (0.0-1.0) in this prediction
+
+Respond with two numbers separated by space."""
+        ).output
+        
+        prob, conf = map(float, result.split())
+        return prob, conf
+```
+
+## Evaluation Methods
+
+### 1. Run Benchmark (Fast)
+
+Test against resolved Manifold markets:
+
+```bash
+python scripts/simple_benchmark.py --n 10
+```
+
+**Before running**, add your agent to the script:
+
+```python scripts/simple_benchmark.py
+from prediction_market_agent.agents.your_agent.deploy import YourCustomAgent
+
+# In the main() function:
+benchmarker = Benchmarker(
+    markets=markets_deduplicated,
+    agents=[
+        BenchmarkAgent(agent=AdvancedAgent()),
+        BenchmarkAgent(agent=YourCustomAgent()),  # Add here
+    ],
+    cache_path=cache_path,
+    only_cached=only_cached,
+)
+```
+
+This generates a markdown report comparing your agent's accuracy to human traders.
+
+### 2. Live Trading (Real evaluation)
+
+Set `bet_on_n_markets_per_run` and run daily:
+
+```python
+class YourCustomAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 5  # Bet on 5 markets per run
+```
+
+By default, agents place tiny bets, so no worries about spending too much!
+
+**Note**: ~10 new markets open daily on Omen, and existing ones resolve.
+
+### 3. Manual Observation
+
+Use the Streamlit app for interactive testing:
+
+```bash
+streamlit run src/app.py
+```
+
+Watch what your agent does for specific questions and iterate.
+
+## Need More API Keys?
+
+If you want to use a 3rd party service that requires paid API keys, reach out to hackathon organizers in the [Discord channel](https://discord.gg/AsnV6nCvpx)!
+
+## Running Multiple Agents
+
+You can run multiple agents simultaneously to test different theories:
+
+<Steps>
+  <Step title="Create Separate Repos">
+    Clone the repository multiple times:
+    ```bash
+    git clone <repo-url> agent-1
+    git clone <repo-url> agent-2
+    ```
+  </Step>
+  
+  <Step title="Separate Private Keys">
+    Each agent needs its own wallet/private key for tracking:
+    - Create multiple MetaMask accounts
+    - Use different private keys in each `.env` file
+  </Step>
+  
+  <Step title="Deploy Each Agent">
+    Run each agent independently:
+    ```bash
+    # In agent-1 directory
+    python prediction_market_agent/run_agent.py agent1 omen
+    
+    # In agent-2 directory
+    python prediction_market_agent/run_agent.py agent2 omen
+    ```
+  </Step>
+</Steps>
+
+This lets you test multiple approaches in parallel on real markets!
+
+## Ideas to Explore
+
+<CardGroup cols={2}>
+  <Card title="Better Prompts" icon="wand-magic-sparkles">
+    Improve prompt engineering for more accurate predictions
+  </Card>
+  
+  <Card title="More Data Sources" icon="database">
+    Add Twitter, Reddit, news APIs for better context
+  </Card>
+  
+  <Card title="Specialized Agents" icon="brain">
+    Focus on specific categories (crypto, politics, sports)
+  </Card>
+  
+  <Card title="Multi-Model Ensemble" icon="layer-group">
+    Combine predictions from multiple LLMs
+  </Card>
+  
+  <Card title="Historical Analysis" icon="clock-rotate-left">
+    Learn from past market outcomes
+  </Card>
+  
+  <Card title="Cost Optimization" icon="coins">
+    Reduce API costs while maintaining accuracy
+  </Card>
+  
+  <Card title="Chain-of-Thought" icon="link">
+    Implement step-by-step reasoning
+  </Card>
+  
+  <Card title="Market Timing" icon="clock">
+    Only trade when you have strong signals
+  </Card>
+</CardGroup>
+
+## Production Deployment
+
+If your agent achieves at least 50% accuracy, it may be added to production deployment!
+
+**Benefits**:
+- Your agent runs live at [Presagio](https://presagio.pages.dev/)
+- Appears on the [leaderboard](https://presagio.pages.dev/leaderboard/agents)
+- Tracked on [Dune Dashboard](https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets)
+- Trades on real markets 24/7
+
+**Requirements**:
+- >50% accuracy (proxy for not losing money)
+- Your approval to use the agent
+- Clean, maintainable code
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/gnosis/prediction-market-agent">
+    View source code and issues
+  </Card>
+  
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/AsnV6nCvpx">
+    Get help and share progress
+  </Card>
+  
+  <Card title="Presagio Leaderboard" icon="trophy" href="https://presagio.pages.dev/leaderboard/agents">
+    See top-performing agents
+  </Card>
+  
+  <Card title="Dune Dashboard" icon="chart-line" href="https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets">
+    Track on-chain activity
+  </Card>
+  
+  <Card title="Streamlit Demo" icon="desktop" href="https://pma-agent.ai.gnosisdev.com/?free_access_code=devcon">
+    Interactive agent testing
+  </Card>
+</CardGroup>
+
+## Tips for Success
+
+<AccordionGroup>
+  <Accordion title="Start Simple">
+    Begin with the CoinFlip or Advanced agent, make small changes, and test frequently.
+  </Accordion>
+  
+  <Accordion title="Focus on Evidence">
+    The best agents gather high-quality evidence before making predictions.
+  </Accordion>
+  
+  <Accordion title="Manage Costs">
+    Track API costs (OpenAI, Tavily, etc.) - they can add up quickly!
+  </Accordion>
+  
+  <Accordion title="Iterate Quickly">
+    Use benchmarking for fast iteration, then validate on live markets.
+  </Accordion>
+  
+  <Accordion title="Read the Code">
+    The best learning comes from reading existing agents' code.
+  </Accordion>
+  
+  <Accordion title="Ask for Help">
+    Join Discord and ask questions - the community is helpful!
+  </Accordion>
+</AccordionGroup>
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="ModuleNotFoundError">
+    **Solution**: Activate Poetry shell:
+    ```bash
+    poetry shell
+    ```
+  </Accordion>
+  
+  <Accordion title="API Key Errors">
+    **Solution**: Check your `.env` file:
+    - Ensure all required keys are present
+    - No spaces around `=` signs
+    - Keys are valid and have credits
+  </Accordion>
+  
+  <Accordion title="No Markets Found">
+    **Solution**: 
+    - Check GRAPH_API_KEY is valid
+    - Verify network connectivity
+    - Try different market type (manifold, omen)
+  </Accordion>
+  
+  <Accordion title="Transaction Failures">
+    **Solution**:
+    - Ensure wallet has xDai balance
+    - Check private key is correct format (starts with 0x)
+    - Verify you're on Gnosis Chain (chain ID 100)
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create Your Agent" icon="hammer" href="/guides/creating-agents">
+    Detailed guide on building custom agents
+  </Card>
+  
+  <Card title="Benchmark Your Agent" icon="chart-line" href="/guides/benchmarking">
+    Test accuracy against human traders
+  </Card>
+  
+  <Card title="Deploy to Production" icon="rocket" href="/guides/deploying-agents">
+    Take your agent live
+  </Card>
+</CardGroup>
+
+## Good Luck!
+
+Build something awesome, have fun, and may your predictions be ever accurate! 🚀

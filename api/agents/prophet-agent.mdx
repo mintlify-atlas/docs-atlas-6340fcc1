@@ -1,0 +1,431 @@
+---
+title: Prophet Agent Family
+description: PredictionProphet-based agents for research-driven market predictions
+---
+
+## Overview
+
+The Prophet agent family uses the PredictionProphet library to perform sophisticated market research and generate evidence-based predictions. These agents represent production-quality implementations with various model configurations and betting strategies.
+
+## Base Classes
+
+### DeployableTraderAgentER
+
+Base class for Prophet agents supporting binary markets.
+
+```python
+class DeployableTraderAgentER(DeployableTraderAgent):
+    agent: PredictionProphetAgent | OlasAgent
+    bet_on_n_markets_per_run = 2
+```
+
+<ParamField path="agent" type="PredictionProphetAgent | OlasAgent">
+  The underlying prediction agent instance
+</ParamField>
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="2">
+  Number of markets to trade on per execution run
+</ParamField>
+
+#### Methods
+
+**answer_binary_market**
+
+```python
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None
+```
+
+Generates predictions using the PredictionProphet agent.
+
+### DeployableTraderAgentERCategorical
+
+Base class for categorical market predictions.
+
+```python
+class DeployableTraderAgentERCategorical(DeployableTraderAgent):
+    agent: PredictionProphetAgent
+    bet_on_n_markets_per_run = 2
+```
+
+**answer_categorical_market**
+
+```python
+def answer_categorical_market(
+    self, market: AgentMarket
+) -> CategoricalProbabilisticAnswer | None
+```
+
+### DeployableTraderAgentERScalar
+
+Base class for scalar market predictions.
+
+```python
+class DeployableTraderAgentERScalar(DeployableTraderAgent):
+    agent: PredictionProphetAgent
+    bet_on_n_markets_per_run = 2
+```
+
+**answer_scalar_market**
+
+```python
+def answer_scalar_market(
+    self, market: AgentMarket
+) -> ScalarProbabilisticAnswer | None
+```
+
+## Production Agents
+
+### DeployablePredictionProphetGPT4oAgent
+
+Primary production agent using GPT-4o with Kelly criterion betting.
+
+```python
+class DeployablePredictionProphetGPT4oAgent(DeployableTraderAgentER):
+    bet_on_n_markets_per_run = 4
+    agent: PredictionProphetAgent
+```
+
+<ParamField path="bet_on_n_markets_per_run" type="int" default="4">
+  Trades on 4 markets per run for increased activity
+</ParamField>
+
+#### Configuration
+
+- **Research Model**: gpt-4o-2024-08-06 (temperature 0.7)
+- **Prediction Model**: gpt-4o-2024-08-06 (temperature 0.0)
+- **Betting Strategy**: FullBinaryKellyBettingStrategy
+  - Min bet: $1
+  - Max bet: $5
+  - Max price impact: 0.7
+
+#### Usage
+
+```python
+from prediction_market_agent.agents.prophet_agent.deploy import (
+    DeployablePredictionProphetGPT4oAgent
+)
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+agent = DeployablePredictionProphetGPT4oAgent(
+    enable_langfuse=True,
+    place_trades=True,
+)
+
+agent.deploy(market_type=MarketType.OMEN)
+```
+
+### DeployablePredictionProphetGPT4oAgent_B
+
+Optimized version with reduced internet searches for lower Tavily API costs.
+
+```python
+class DeployablePredictionProphetGPT4oAgent_B(DeployableTraderAgentER):
+    bet_on_n_markets_per_run = 4
+    agent: PredictionProphetAgent
+```
+
+#### Key Differences
+
+- **subqueries_limit**: 3 (reduced from default)
+- **min_scraped_sites**: 3 (reduced from default)
+- Same model configuration as base GPT-4o agent
+
+### DeployablePredictionProphetGPT4oAgent_C
+
+Experimental agent testing the impact of disabling take-profit functionality.
+
+<ParamField path="take_profit" type="bool" default="False">
+  Disabled to test if larger final payouts increase profits
+</ParamField>
+
+## Model Variants
+
+### OpenAI Models
+
+#### GPT-4o-mini
+
+```python
+class DeployablePredictionProphetGPT4ominiAgent(DeployableTraderAgentER):
+    # Uses gpt-4o-mini-2024-07-18
+    # Cheaper but potentially less accurate
+```
+
+#### GPT-4 Turbo
+
+```python
+class DeployablePredictionProphetGPT4TurboFinalAgent(DeployableTraderAgentER):
+    # Uses gpt-4-turbo-2024-04-09
+    # max_price_impact: None (no limit)
+```
+
+#### O-series Models
+
+**o1-2024-12-17**
+
+```python
+class DeployablePredictionProphetGPTo1(DeployableTraderAgentER):
+    # Temperature: 1.0 (required by o1)
+    # Max price impact: 0.418
+```
+
+**o3-mini**
+
+```python
+class DeployablePredictionProphetGPTo3mini(DeployableTraderAgentER):
+    # Uses MaxExpectedValueBettingStrategy
+    # Min bet: $0.5, Max bet: $1
+```
+
+### Anthropic Models
+
+#### Claude 3.5 Sonnet
+
+```python
+class DeployablePredictionProphetClaude35SonnetAgent(DeployableTraderAgentER):
+    # Model: claude-3-5-sonnet-20241022
+    # Max bet: $4.77, Max price impact: 0.63
+```
+
+#### Claude 3.5 Haiku
+
+```python
+class DeployablePredictionProphetClaude35HaikuAgent(DeployableTraderAgentER):
+    # Model: claude-3-5-haiku-20241022
+    # Betting disabled (commented out)
+```
+
+### OpenRouter Models
+
+#### Gemini 2.0 Flash
+
+```python
+class DeployablePredictionProphetGemini20Flash(
+    DeployableTraderAgentProphetOpenRouter
+):
+    model = "google/gemini-2.0-flash-001"
+    bet_on_n_markets_per_run = 4
+```
+
+#### DeepSeek Chat
+
+```python
+class DeployablePredictionProphetDeepSeekChat(
+    DeployableTraderAgentProphetOpenRouter
+):
+    model = "deepseek/deepseek-chat"
+```
+
+## Categorical Markets
+
+### DeployablePredictionProphetGPT4oAgentCategorical
+
+Specialized agent for categorical prediction markets.
+
+```python
+class DeployablePredictionProphetGPT4oAgentCategorical(
+    DeployableTraderAgentERCategorical
+):
+    bet_on_n_markets_per_run = 4
+```
+
+#### Betting Strategy (Omen Markets)
+
+- **Strategy**: FullCategoricalKellyBettingStrategy
+- **Max position**: $0.01 to $0.75
+- **Max price impact**: 0.068
+- **allow_multiple_bets**: False
+- **allow_shorting**: False
+- **multicategorical**: False
+
+#### Usage
+
+```python
+from prediction_market_agent.agents.prophet_agent.deploy import (
+    DeployablePredictionProphetGPT4oAgentCategorical
+)
+
+agent = DeployablePredictionProphetGPT4oAgentCategorical()
+agent.deploy(market_type=MarketType.OMEN)
+```
+
+## Scalar Markets
+
+### DeployablePredictionProphetGPT4oAgentScalar
+
+Agent for scalar range markets.
+
+```python
+class DeployablePredictionProphetGPT4oAgentScalar(
+    DeployableTraderAgentERScalar
+):
+    bet_on_n_markets_per_run = 4
+```
+
+#### Special Configuration
+
+- Uses `TopNOpenAINModel` with n=5
+- Temperature: 0.7 for prediction agent
+- Generates multiple predictions and aggregates results
+
+## News-Based Trading
+
+### DeployablePredictionProphetGPT4oAgentNewMarketTrader
+
+Agent that trades on new markets and re-evaluates positions when relevant news is published.
+
+```python
+class DeployablePredictionProphetGPT4oAgentNewMarketTrader(
+    DeployablePredictionProphetGPT4oAgent
+):
+    trade_on_markets_created_after = DatetimeUTC(2024, 10, 31, 0)
+    get_markets_sort_by = SortBy.NEWEST
+    same_market_trade_interval = MarketLifetimeProportionalInterval(max_trades=4)
+```
+
+<ParamField path="trade_on_markets_created_after" type="DatetimeUTC">
+  Only trades on markets created after this date
+</ParamField>
+
+<ParamField path="get_markets_sort_by" type="SortBy" default="SortBy.NEWEST">
+  Sorts markets by creation date to target new markets
+</ParamField>
+
+<ParamField path="same_market_trade_interval" type="MarketLifetimeProportionalInterval">
+  Re-trades up to 4 times per market based on news relevance
+</ParamField>
+
+#### News Detection Logic
+
+```python
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Check for new relevant news since last trade
+    last_trade_datetime = market.get_most_recent_trade_datetime(user_id=user_id)
+    if last_trade_datetime:
+        news = get_certified_relevant_news_since_cached(
+            question=market.question,
+            days_ago=(utcnow() - last_trade_datetime).days,
+        )
+        return news is not None
+    return True
+```
+
+## Embedding Models
+
+### DeployableOlasEmbeddingOAAgent
+
+Agent using the Olas embedding model for market analysis.
+
+```python
+class DeployableOlasEmbeddingOAAgent(DeployableTraderAgentER):
+    agent: OlasAgent
+```
+
+- **embedding_model**: EmbeddingModel.openai
+- **Betting**: FullCategoricalKellyBettingStrategy
+- **Max price impact**: 0.7333
+
+## PredictionProphet Configuration
+
+All agents initialize `PredictionProphetAgent` with:
+
+<ParamField path="research_agent" type="Agent">
+  Agent for web research and information gathering
+  - Temperature: 0.7 (creative search)
+</ParamField>
+
+<ParamField path="prediction_agent" type="Agent">
+  Agent for making final predictions
+  - Temperature: 0.0 (deterministic)
+</ParamField>
+
+<ParamField path="include_reasoning" type="bool" default="True">
+  Include reasoning in prediction responses
+</ParamField>
+
+<ParamField path="logger" type="Logger">
+  Logger instance for tracking agent activity
+</ParamField>
+
+### Optional Parameters
+
+<ParamField path="subqueries_limit" type="int" default="3">
+  Maximum number of research subqueries (used in optimized agents)
+</ParamField>
+
+<ParamField path="min_scraped_sites" type="int" default="3">
+  Minimum number of websites to scrape for research
+</ParamField>
+
+## Advanced Usage
+
+### Custom Prophet Agent
+
+```python
+from prediction_market_agent.agents.prophet_agent.deploy import (
+    DeployableTraderAgentProphetOpenRouter
+)
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    FullBinaryKellyBettingStrategy,
+)
+
+class MyCustomProphetAgent(DeployableTraderAgentProphetOpenRouter):
+    model = "your-model/model-name"
+    bet_on_n_markets_per_run = 5
+    
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=USD(10),
+            max_price_impact=0.5,
+        )
+
+agent = MyCustomProphetAgent()
+agent.deploy(market_type=MarketType.OMEN)
+```
+
+### Loading Existing Agent
+
+```python
+from prediction_market_agent.agents.prophet_agent.deploy import (
+    DeployablePredictionProphetGPT4oAgent
+)
+
+agent = DeployablePredictionProphetGPT4oAgent()
+agent.load()  # Initialize the PredictionProphet agent
+
+# Use the agent for prediction
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+
+market = OmenAgentMarket.get_market(market_id="0x...")
+answer = agent.answer_binary_market(market)
+print(f"Prediction: {answer.p_yes}, Confidence: {answer.confidence}")
+```
+
+## Required API Keys
+
+<ParamField path="OPENAI_API_KEY" type="str">
+  Required for OpenAI model variants
+</ParamField>
+
+<ParamField path="ANTHROPIC_API_KEY" type="str">
+  Required for Claude model variants
+</ParamField>
+
+<ParamField path="OPENROUTER_API_KEY" type="str">
+  Required for Gemini, DeepSeek, and other OpenRouter models
+</ParamField>
+
+<ParamField path="TAVILY_API_KEY" type="str">
+  Required for web research functionality
+</ParamField>
+
+## Source Location
+
+```
+prediction_market_agent/agents/prophet_agent/deploy.py
+```
+
+## Related
+
+- [PredictionProphet Library](https://github.com/gnosis/prediction-prophet) - Underlying research library
+- [Think Thoroughly Agent](/api/agents/think-thoroughly-agent) - Multi-scenario reasoning agent
+- [Betting Strategies](/api/strategies/betting) - Kelly criterion and other strategies

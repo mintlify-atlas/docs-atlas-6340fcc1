@@ -1,80 +1,227 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Run your first prediction market agent in minutes with this step-by-step tutorial
 ---
 
-## Get started in three steps
+This guide will walk you through running your first agent using the simple coinflip agent example.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+Make sure you have:
+
+1. Completed the [installation](/installation) steps
+2. Configured your [environment variables](/configuration) (minimum: `BET_FROM_PRIVATE_KEY` and `OPENAI_API_KEY`)
+
+## Running the coinflip agent
+
+The coinflip agent is the simplest agent in the library. It makes random predictions by "flipping a coin" to decide between yes/no on binary markets.
+
+<Steps>
+  <Step title="Activate Poetry shell">
+    If you haven't already, activate the Poetry environment:
+
+    ```bash
+    python3.11 -m poetry shell
+    ```
+  </Step>
+
+  <Step title="Run the agent">
+    Execute the coinflip agent on the Omen market:
+
+    ```bash
+    python prediction_market_agent/run_agent.py coinflip omen
+    ```
+
+    The agent will:
+    - Fetch available markets from Omen/Presagio
+    - Select a market to bet on
+    - Make a random prediction (coin flip)
+    - Place a bet on the market
+  </Step>
+
+  <Step title="View the output">
+    You'll see output showing:
+    - Which market was selected
+    - The agent's prediction and reasoning
+    - Transaction details if a bet was placed
+
+    <Note>
+      The first run may take longer as it fetches and processes market data.
+    </Note>
+  </Step>
+</Steps>
+
+## Available agents and markets
+
+### Viewing available options
+
+To see all available agents and market types:
+
+```bash
+python prediction_market_agent/run_agent.py --help
+```
+
+### Agent options
+
+The library includes many pre-built agents:
+
+<Tabs>
+  <Tab title="Simple agents">
+    - `coinflip` - Random predictions
+    - `knownoutcome` - Bets on markets with known outcomes (for testing)
+  </Tab>
+  <Tab title="Research agents">
+    - `think_thoroughly` - Deep research and analysis
+    - `think_thoroughly_prophet` - Research with Prophet forecasting
+    - `prophet_gpt4o` - GPT-4o powered forecasting
+    - `prophet_gpt4omini` - Lightweight GPT-4o mini forecasting
+  </Tab>
+  <Tab title="Advanced agents">
+    - `microchain` - Autonomous agent with tool calling
+    - `microchain_with_goal_manager_agent_0` - Goal-oriented agent
+    - `social_media` - Analyzes social media sentiment
+  </Tab>
+  <Tab title="Platform-specific">
+    - `metaculus_bot_tournament_agent` - Optimized for Metaculus
+    - `replicate_to_omen` - Replicates markets to Omen
+  </Tab>
+</Tabs>
+
+### Market type options
+
+Supported market platforms:
+
+- `omen` - Decentralized prediction markets on Gnosis Chain (Presagio)
+- `manifold` - Play-money prediction markets
+- `polymarket` - Cryptocurrency-based prediction markets
+- `metaculus` - Forecasting platform
+
+## Running other agents
+
+Try running different agents on different platforms:
+
+<CodeGroup>
+
+```bash Prophet on Polymarket
+python prediction_market_agent/run_agent.py prophet_gpt4o polymarket
+```
+
+```bash Think Thoroughly on Manifold
+python prediction_market_agent/run_agent.py think_thoroughly manifold
+```
+
+```bash Microchain on Omen
+python prediction_market_agent/run_agent.py microchain omen
+```
+
+</CodeGroup>
+
+<Warning>
+  Different agents may require additional environment variables. The agent will inform you if any required variables are missing.
+</Warning>
+
+## Understanding the coinflip agent code
+
+Here's the complete implementation of the coinflip agent to understand how simple it is to create an agent:
+
+```python prediction_market_agent/agents/coinflip_agent/deploy.py
+import random
+from datetime import timedelta
+
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.trade_interval import (
+    FixedInterval,
+    TradeInterval,
+)
+from prediction_market_agent_tooling.gtypes import Probability
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket, SortBy
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+
+class DeployableCoinFlipAgent(DeployableTraderAgent):
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        return True
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+```
+
+### Key components
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="DeployableTraderAgent base class">
+    All agents inherit from `DeployableTraderAgent` which provides:
+    - Market fetching and filtering
+    - Bet placement logic
+    - Error handling and logging
+    - Trade interval management
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="verify_market method">
+    Called to determine if the agent should consider a market. The coinflip agent accepts all markets by returning `True`.
+  </Accordion>
+
+  <Accordion title="answer_binary_market method">
+    The core logic that returns a prediction. Must return a `ProbabilisticAnswer` with:
+    - `p_yes` - Probability of "yes" outcome (0.0 to 1.0)
+    - `confidence` - Agent's confidence in the prediction
+    - `reasoning` - Explanation of the prediction
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+## Interactive Streamlit app
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+For a more interactive experience, try the agent research app:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```bash
+streamlit run scripts/agent_app.py
+```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+This opens a web interface where you can:
+- Browse prediction markets
+- Select multiple agents to analyze the same question
+- Compare agent predictions and reasoning
+- See real-time research and analysis
 
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+<Note>
+  The Streamlit app is also deployed at [pma-agent.ai.gnosisdev.com](https://pma-agent.ai.gnosisdev.com)
+</Note>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Create your own agent"
+    icon="code"
+    href="/guides/creating-agents"
+  >
+    Learn how to build custom agents by subclassing DeployableTraderAgent
+  </Card>
+  <Card
+    title="Deploy to production"
+    icon="cloud"
+    href="/deployment/local"
+  >
+    Deploy your agent to cloud infrastructure for continuous trading
+  </Card>
+  <Card
+    title="Advanced configuration"
+    icon="sliders"
+    href="/configuration"
+  >
+    Configure advanced features like trade intervals, market filtering, and more
+  </Card>
+  <Card
+    title="View live agents"
+    icon="chart-line"
+    href="https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets"
+  >
+    Track deployed agents on the Dune Analytics dashboard
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

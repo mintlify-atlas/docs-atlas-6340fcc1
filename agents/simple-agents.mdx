@@ -1,0 +1,214 @@
+---
+title: Simple Agents
+description: Basic prediction agents including coinflip and known outcome strategies
+---
+
+Simple agents provide baseline strategies for prediction markets, from random predictions to betting on markets with determinable outcomes.
+
+## Available Agents
+
+<CardGroup cols={2}>
+  <Card title="Coinflip Agent" icon="dice">
+    Makes random 50/50 predictions on markets
+  </Card>
+  <Card title="Coinflip Highest Liquidity" icon="coins">
+    Random predictions targeting high liquidity markets
+  </Card>
+  <Card title="Known Outcome Agent" icon="check">
+    Identifies and bets on markets with determinable outcomes
+  </Card>
+  <Card title="Invalid Agent" icon="xmark">
+    Specialized agent for identifying invalid markets
+  </Card>
+</CardGroup>
+
+## Coinflip Agent
+
+The simplest possible agent that makes random binary predictions. Useful as a baseline for comparing other agents' performance.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py coinflip omen
+```
+
+### Implementation
+
+```python
+class DeployableCoinFlipAgent(DeployableTraderAgent):
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        return True
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+```
+
+**Key Features:**
+- No market filtering - bets on everything
+- 50/50 random predictions
+- Minimal computational cost
+- Serves as performance baseline
+
+## Coinflip Highest Liquidity Agent
+
+Variant of the coinflip agent that targets high liquidity markets and trades less frequently.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py coinflip_highest_liquidity omen
+```
+
+### Configuration
+
+```python
+class DeployableCoinFlipAgentByHighestLiquidity(DeployableCoinFlipAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=14))
+```
+
+**Key Features:**
+- Sorts markets by highest liquidity
+- Bets on 2 markets per run
+- Re-trades same markets every 14 days
+- Better price execution due to high liquidity
+
+## Known Outcome Agent
+
+Sophisticated agent that uses GPT-4 to identify markets where the outcome is already determinable (e.g., "Will X happen by date Y?" when Y has already passed).
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py knownoutcome omen
+```
+
+### Implementation
+
+```python
+class DeployableKnownOutcomeAgent(DeployableTraderAgent):
+    model = "gpt-4-1106-preview"
+    min_liquidity = USD(5)
+    bet_on_n_markets_per_run = 2
+    supported_markets = [MarketType.OMEN]
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(2),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.6,
+        )
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        outcome = get_known_outcome(
+            model=self.model,
+            question=market.question,
+            max_tries=3,
+        )
+        if outcome and outcome.has_known_result():
+            return ProbabilisticAnswer(
+                p_yes=outcome.result.to_p_yes(),
+                confidence=1.0,
+                reasoning=outcome.reasoning,
+            )
+        return None
+```
+
+**Key Features:**
+- Uses GPT-4 to determine if outcome is already known
+- Full Kelly betting strategy with 60% max price impact
+- Skips saturated markets (>95% probability)
+- Requires minimum $5 liquidity
+- High confidence (1.0) predictions when outcome is known
+
+### Market Verification
+
+The agent filters markets based on:
+
+```python
+def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+    # Skip saturated markets
+    if market_is_saturated(market=market):
+        return False
+    
+    # Skip low liquidity markets
+    if market.get_liquidity() < market.get_in_token(self.min_liquidity):
+        return False
+    
+    return True
+```
+
+## Invalid Agent
+
+Identifies and potentially bets on invalid markets (markets that should be resolved as invalid due to ambiguity, errors, or other issues).
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py invalid omen
+```
+
+**Use Cases:**
+- Identifying ambiguous market questions
+- Markets with incorrect resolution criteria
+- Duplicate or spam markets
+- Markets that violate platform rules
+
+## Performance Comparison
+
+Expected performance characteristics:
+
+| Agent | Expected ROI | Risk Level | Computational Cost |
+|-------|--------------|------------|--------------------|
+| Coinflip | ~0% | Medium | Very Low |
+| Coinflip Highest Liquidity | ~0% | Low | Very Low |
+| Known Outcome | Positive* | Low | Medium |
+| Invalid | Variable | Medium | Medium |
+
+*Known Outcome agent should be profitable if markets are mispriced.
+
+## Best Practices
+
+### When to Use Simple Agents
+
+- **Testing**: Validate infrastructure with coinflip agent
+- **Baseline**: Compare advanced agent performance against coinflip
+- **Arbitrage**: Use known outcome agent to find mispriced markets
+- **Market Quality**: Use invalid agent to identify problematic markets
+
+### Configuration Tips
+
+```python
+# For testing
+agent = DeployableCoinFlipAgent(
+    place_trades=False,  # Don't actually trade
+    store_predictions=True,  # Log predictions
+)
+
+# For production (Known Outcome)
+agent = DeployableKnownOutcomeAgent(
+    enable_langfuse=True,  # Enable tracing
+    place_trades=True,
+    bet_on_n_markets_per_run=2,
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Research Agents" icon="magnifying-glass" href="/agents/research-agents">
+    Explore agents with web research capabilities
+  </Card>
+  <Card title="Prophet Agents" icon="crystal-ball" href="/agents/prophet-agents">
+    Learn about LLM-powered prediction agents
+  </Card>
+</CardGroup>

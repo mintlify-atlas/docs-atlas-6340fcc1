@@ -1,0 +1,284 @@
+---
+title: Creating Custom Agents
+description: Learn how to create your own prediction market trading agents using the Prediction Market Agent framework
+---
+
+## Overview
+
+The easiest way to create your own agent that places bets on prediction markets is to subclass the `DeployableTraderAgent` class. This guide walks you through creating a custom agent, using the `DeployableCoinFlipAgent` as a minimal example.
+
+## Prerequisites
+
+Before creating your agent, ensure you have:
+
+- Python 3.11 or higher installed
+- The repository set up with dependencies installed via Poetry
+- Required API keys configured in your `.env` file
+
+## Understanding DeployableTraderAgent
+
+The `DeployableTraderAgent` is the base class that provides the framework for creating trading agents. Your custom agent needs to implement two key methods:
+
+1. `verify_market()` - Validates whether the agent should trade on a given market
+2. `answer_binary_market()` - Returns a prediction for a binary market question
+
+## Example: CoinFlip Agent
+
+Let's examine the simplest possible agent - one that makes random predictions:
+
+```python prediction_market_agent/agents/coinflip_agent/deploy.py
+import random
+from datetime import timedelta
+
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.deploy.trade_interval import (
+    FixedInterval,
+    TradeInterval,
+)
+from prediction_market_agent_tooling.gtypes import Probability
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket, SortBy
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+
+class DeployableCoinFlipAgent(DeployableTraderAgent):
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        return True
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+```
+
+### Key Components
+
+<AccordionGroup>
+  <Accordion title="verify_market() Method">
+    This method determines whether your agent should trade on a specific market.
+    
+    ```python
+    def verify_market(self, market_type: MarketType, market: AgentMarket) -> bool:
+        return True  # Trade on all markets
+    ```
+    
+    You can add custom logic here to filter markets based on:
+    - Market type (Omen, Manifold, Polymarket)
+    - Question content
+    - Liquidity levels
+    - Time until market close
+  </Accordion>
+
+  <Accordion title="answer_binary_market() Method">
+    This method generates your agent's prediction for a binary market.
+    
+    ```python
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        decision = random.choice([True, False])
+        return ProbabilisticAnswer(
+            confidence=0.5,
+            p_yes=Probability(float(decision)),
+            reasoning="I flipped a coin to decide.",
+        )
+    ```
+    
+    The `ProbabilisticAnswer` contains:
+    - `p_yes`: Probability that the answer is "Yes" (0.0 to 1.0)
+    - `confidence`: How confident the agent is in this prediction (0.0 to 1.0)
+    - `reasoning`: Explanation for the prediction
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Configuration
+
+You can customize your agent's behavior with additional configuration:
+
+```python
+class DeployableCoinFlipAgentByHighestLiquidity(DeployableCoinFlipAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval: TradeInterval = FixedInterval(timedelta(days=14))
+```
+
+### Configuration Options
+
+| Parameter | Description | Default |
+|-----------|-------------|--------|
+| `bet_on_n_markets_per_run` | Number of markets to trade on per execution | Varies by agent |
+| `get_markets_sort_by` | How to sort available markets | `SortBy.NONE` |
+| `same_market_trade_interval` | Minimum time between trades on the same market | - |
+| `trade_on_markets_created_after` | Only trade on markets created after this date | - |
+
+## Creating an Evidence-Based Agent
+
+For a more sophisticated agent that uses real data, examine the `AdvancedAgent`:
+
+```python prediction_market_agent/agents/advanced_agent/deploy.py
+from prediction_market_agent_tooling.deploy.agent import DeployableTraderAgent
+from prediction_market_agent_tooling.gtypes import Probability
+from prediction_market_agent_tooling.loggers import logger
+from prediction_market_agent_tooling.markets.agent_market import AgentMarket
+from prediction_market_agent_tooling.markets.data_models import ProbabilisticAnswer
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+from prediction_market_agent_tooling.tools.openai_utils import get_openai_provider
+from prediction_market_agent_tooling.tools.utils import utcnow
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIModel
+
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+from prediction_market_agent.utils import APIKeys
+
+
+class AdvancedAgent(DeployableTraderAgent):
+    """
+    This is the most basic agent that should be actually able to do some evidence-based predictions.
+    Use as a baseline for comparing with other agents.
+    """
+
+    bet_on_n_markets_per_run = 4
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Search for results on Google
+        google_results = search_google_serper(market.question)
+        # Filter out Manifold results
+        google_results = [url for url in google_results if "manifold" not in url]
+        
+        if not google_results:
+            logger.info(f"No results found for {market.question}.")
+            return None
+            
+        # Scrape content from URLs
+        contents = [
+            scraped[:10000]
+            for url in google_results[:5]
+            if (scraped := web_scrape(url))
+        ]
+        
+        if not contents:
+            logger.info(f"No contents found for {market.question}")
+            return None
+            
+        # Use LLM to predict probability and confidence
+        probability, confidence = llm(market.question, contents)
+
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+            reasoning="I asked Google and LLM to do it!",
+        )
+
+
+def llm(question: str, contents: list[str]) -> tuple[float, float]:
+    agent = Agent(
+        OpenAIModel(
+            "gpt-4o-mini",
+            provider=get_openai_provider(api_key=APIKeys().openai_api_key),
+        ),
+        system_prompt="You are professional prediction market trading agent.",
+    )
+    result = agent.run_sync(
+        f"""Today is {utcnow()}.
+
+Given the following question and content from google search, what's the probability that the thing in the question will happen?
+
+Question: {question}
+
+Content: {contents}
+
+Return only the probability float number and confidence float number, separated by space, nothing else."""
+    ).output
+    probability, confidence = map(float, result.split())
+    return probability, confidence
+```
+
+<Steps>
+  <Step title="Search for Information">
+    Use `search_google_serper()` to find relevant URLs about the market question.
+  </Step>
+  
+  <Step title="Scrape Content">
+    Extract text content from the top URLs using `web_scrape()`.
+  </Step>
+  
+  <Step title="Analyze with LLM">
+    Pass the question and scraped content to an LLM to generate a probability and confidence score.
+  </Step>
+  
+  <Step title="Return Prediction">
+    Return a `ProbabilisticAnswer` with the prediction results.
+  </Step>
+</Steps>
+
+## Registering Your Agent
+
+Once you've created your agent, register it in `prediction_market_agent/run_agent.py`:
+
+<Steps>
+  <Step title="Add to RunnableAgent Enum">
+    ```python
+    class RunnableAgent(str, Enum):
+        # ... existing agents ...
+        your_agent = "your_agent"
+    ```
+  </Step>
+  
+  <Step title="Add to RUNNABLE_AGENTS Dict">
+    ```python
+    RUNNABLE_AGENTS: dict[RunnableAgent, type[DeployableAgent]] = {
+        # ... existing agents ...
+        RunnableAgent.your_agent: YourCustomAgent,
+    }
+    ```
+  </Step>
+  
+  <Step title="Import Your Agent">
+    ```python
+    from prediction_market_agent.agents.your_agent.deploy import YourCustomAgent
+    ```
+  </Step>
+</Steps>
+
+## Running Your Agent
+
+Execute your agent using the command line:
+
+```bash
+python prediction_market_agent/run_agent.py your_agent omen
+```
+
+Replace `omen` with your target market type: `omen`, `manifold`, `polymarket`, or `metaculus`.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start Simple" icon="rocket">
+    Begin with a simple agent like `DeployableCoinFlipAgent` to understand the framework, then add complexity.
+  </Card>
+  
+  <Card title="Use Evidence" icon="magnifying-glass">
+    Implement data gathering from reliable sources (APIs, web scraping) for better predictions.
+  </Card>
+  
+  <Card title="Handle Errors" icon="shield-check">
+    Return `None` from `answer_binary_market()` when you can't make a reliable prediction.
+  </Card>
+  
+  <Card title="Log Everything" icon="file-lines">
+    Use the logger to track your agent's decisions for debugging and improvement.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy Your Agent" icon="rocket" href="/guides/deploying-agents">
+    Learn how to deploy your agent to production
+  </Card>
+  
+  <Card title="Benchmark Performance" icon="chart-line" href="/guides/benchmarking">
+    Test your agent's accuracy against human traders
+  </Card>
+</CardGroup>

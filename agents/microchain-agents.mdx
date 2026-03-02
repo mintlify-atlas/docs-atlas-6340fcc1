@@ -1,0 +1,477 @@
+---
+title: Microchain Agents
+description: Self-learning agents with tool use, memory, and adaptive system prompts powered by the Microchain framework
+---
+
+Microchain agents use the [Microchain](https://github.com/i-am-bee/bee-agent-framework) framework to create autonomous agents that can use tools, maintain memory, and even modify their own behavior.
+
+## Available Agents
+
+<CardGroup cols={2}>
+  <Card title="Base Microchain" icon="robot">
+    Standard trading agent with tool use capabilities
+  </Card>
+  <Card title="Modifiable Prompt 0-3" icon="pen">
+    Agents that can modify their own system prompts
+  </Card>
+  <Card title="Goal Manager Agent" icon="bullseye">
+    Agent with autonomous goal setting and tracking
+  </Card>
+  <Card title="NFT Game Agents" icon="gamepad">
+    Specialized agents for NFT treasury game
+  </Card>
+</CardGroup>
+
+## Architecture
+
+Microchain agents differ from other agents by running in a continuous loop with tool access:
+
+```python
+class DeployableMicrochainAgentAbstract(DeployableAgent):
+    model = SupportedModel.gpt_4o
+    max_iterations = 50
+    import_actions_from_memory = 0
+    sleep_between_iterations = 0
+    allow_stop = True
+    
+    def run(self, market_type: MarketType) -> None:
+        self.initialise_agent()
+        iteration = 0
+        
+        while not self.agent.do_stop and iteration < self.max_iterations:
+            self.before_iteration_callback()
+            self.agent.run(iterations=1, resume=True)
+            self.save_agent_history()
+            iteration += 1
+            self.after_iteration_callback()
+```
+
+### Key Differences
+
+**Traditional Agents:**
+- Fetch markets → Predict → Trade → Exit
+- Stateless between runs
+- Fixed behavior
+
+**Microchain Agents:**
+- Continuous loop with tool access
+- Persistent memory across runs
+- Can modify their own prompts
+- Autonomous decision making
+
+## Base Microchain Agent
+
+Standard trading agent with full tool access.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py microchain omen
+```
+
+### Configuration
+
+```python
+class DeployableMicrochainAgent(DeployableMicrochainAgentAbstract):
+    identifier = MICROCHAIN_AGENT_OMEN
+    functions_config = TRADING_AGENT_SYSTEM_PROMPT_CONFIG.functions_config
+    initial_system_prompt = TRADING_AGENT_SYSTEM_PROMPT_CONFIG.system_prompt
+```
+
+### Available Tools
+
+The agent has access to:
+
+- `get_markets()` - Fetch available markets
+- `get_market_detail()` - Get specific market information
+- `place_bet()` - Execute trades
+- `check_balance()` - View current balance
+- `get_positions()` - View open positions
+- `search_similar_markets()` - Find related markets via Pinecone
+- `web_search()` - Search the internet
+- `stop()` - End execution
+
+### Example System Prompt
+
+```python
+TRADING_AGENT_SYSTEM_PROMPT = """
+You are an autonomous prediction market trading agent.
+
+Your goal is to maximize long-term profit by:
+1. Finding underpriced markets
+2. Conducting research on market outcomes
+3. Placing well-sized bets
+4. Managing risk appropriately
+
+You have access to tools for market analysis, web research, and trading.
+Use them strategically to achieve your goals.
+
+Available functions:
+{functions_summary}
+"""
+```
+
+## Modifiable System Prompt Agents
+
+These agents can modify their own system prompts to adapt their behavior based on experience.
+
+### Usage
+
+```bash
+# Four independent agents (versions 0-3)
+python prediction_market_agent/run_agent.py microchain_modifiable_system_prompt_0 omen
+python prediction_market_agent/run_agent.py microchain_modifiable_system_prompt_1 omen
+python prediction_market_agent/run_agent.py microchain_modifiable_system_prompt_2 omen
+python prediction_market_agent/run_agent.py microchain_modifiable_system_prompt_3 omen
+```
+
+### Implementation
+
+```python
+class DeployableMicrochainModifiableSystemPromptAgent0(
+    DeployableMicrochainModifiableSystemPromptAgentAbstract
+):
+    identifier = MICROCHAIN_AGENT_OMEN_LEARNING_0
+    functions_config = JUST_BORN_SYSTEM_PROMPT_CONFIG.functions_config
+    initial_system_prompt = JUST_BORN_SYSTEM_PROMPT_CONFIG.system_prompt
+```
+
+### Initial "Just Born" Prompt
+
+```python
+JUST_BORN_SYSTEM_PROMPT = """
+You are a newly created prediction market trading agent.
+
+You have been given tools but minimal instructions.
+Your task is to:
+1. Learn about prediction markets through exploration
+2. Develop your own trading strategy
+3. Refine your approach based on results
+4. Modify this system prompt to encode your learnings
+
+You can update your system prompt using the modify_system_prompt() tool.
+
+Available functions:
+{functions_summary}
+"""
+```
+
+### Additional Tools
+
+- `get_system_prompt()` - View current prompt
+- `modify_system_prompt()` - Update the system prompt
+- `view_past_trades()` - Analyze historical performance
+- `calculate_roi()` - Check profitability
+
+### Learning Process
+
+```python
+# Agent can modify its own behavior:
+1. Initial run with minimal prompt
+2. Agent explores markets and tools
+3. Agent analyzes what works/doesn't work
+4. Agent updates system prompt with learnings
+5. Updated prompt persists to database
+6. Next run uses improved prompt
+7. Repeat cycle
+```
+
+### Version 3 (Llama 3.1)
+
+```python
+class DeployableMicrochainModifiableSystemPromptAgent3(
+    DeployableMicrochainModifiableSystemPromptAgentAbstract
+):
+    identifier = MICROCHAIN_AGENT_OMEN_LEARNING_3
+    model = SupportedModel.llama_31_instruct
+    max_iterations = 10  # Replicate API has 4096 token limit
+```
+
+Uses open-source Llama 3.1 instead of GPT-4o.
+
+## Goal Manager Agent
+
+Agent with autonomous goal setting, tracking, and evaluation.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py microchain_with_goal_manager_agent_0 omen
+```
+
+### Implementation
+
+```python
+class DeployableMicrochainWithGoalManagerAgent0(DeployableMicrochainAgent):
+    identifier = MICROCHAIN_AGENT_OMEN_WITH_GOAL_MANAGER
+    model = SupportedModel.gpt_4o
+    functions_config = TRADING_AGENT_SYSTEM_PROMPT_MINIMAL_CONFIG.functions_config
+    initial_system_prompt = TRADING_AGENT_SYSTEM_PROMPT_MINIMAL_CONFIG.system_prompt
+    
+    def build_goal_manager(self, agent: Agent) -> GoalManager:
+        return GoalManager(
+            agent_id=self.identifier,
+            high_level_description="You are a trader agent in prediction markets, aiming to maximise your long-term profit.",
+            agent_capabilities=f"You have the following capabilities:\n{get_functions_summary_list(agent.engine)}",
+            retry_limit=1,
+            goal_history_limit=10,
+        )
+```
+
+### Goal Manager Architecture
+
+```python
+class GoalManager:
+    def get_goal(self) -> Goal:
+        """Generate or retrieve current goal"""
+        
+    def evaluate_goal_progress(self, goal: Goal, chat_history: ChatHistory) -> str:
+        """Evaluate if goal was achieved"""
+        
+    def save_evaluated_goal(self, goal: Goal, evaluation: str) -> None:
+        """Store goal and outcome"""
+```
+
+### Goal Setting Process
+
+1. **Goal Generation**: LLM creates specific, measurable goal
+   ```python
+   Goal(
+       description="Place a profitable bet on a market about US politics",
+       success_criteria="Bet placed with >60% confidence on underpriced outcome",
+       time_limit="1 hour",
+   )
+   ```
+
+2. **Execution**: Agent works toward goal using available tools
+
+3. **Evaluation**: LLM evaluates if goal was achieved
+   ```python
+   evaluation = """
+   Goal: Place profitable bet on US politics market
+   Status: SUCCESS
+   Reasoning: Found market trading at 40% for likely outcome (should be 70%),
+   placed $2 bet with Kelly sizing.
+   """
+   ```
+
+4. **Learning**: Goal and evaluation stored in database
+
+5. **Next Goal**: New goal generated based on history
+
+### Minimal System Prompt
+
+```python
+TRADING_AGENT_SYSTEM_PROMPT_MINIMAL = """
+You are a trader agent in prediction markets.
+
+Your current goal:
+{goal}
+
+Use your tools to achieve this goal efficiently.
+"""
+```
+
+Goal Manager injects the current goal into the prompt.
+
+## NFT Treasury Game Agents
+
+Seven specialized agents for the NFT Treasury Game experiment.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py nft_treasury_game_agent_1 omen
+python prediction_market_agent/run_agent.py nft_treasury_game_agent_2 omen
+# ... agents 3-7
+```
+
+### Implementation
+
+```python
+from prediction_market_agent.agents.microchain_agent.nft_treasury_game.deploy_nft_treasury_game import (
+    DeployableAgentNFTGame1,
+    DeployableAgentNFTGame2,
+    # ... through DeployableAgentNFTGame7
+)
+```
+
+Each agent has unique configuration for multi-agent game scenarios.
+
+## Memory System
+
+All microchain agents use persistent long-term memory.
+
+### Chat History Storage
+
+```python
+class LongTermMemoryTableHandler:
+    def save(self, chat_message: ChatMessage) -> None:
+        """Save message to database"""
+        
+    def search(self, limit: int, from_: DatetimeUTC | None) -> list[ChatMessage]:
+        """Retrieve past messages"""
+```
+
+### Memory Import
+
+```python
+class DeployableMicrochainAgent:
+    import_actions_from_memory = 10  # Import last 10 actions
+    import_actions_from_memory_from = DatetimeUTC(2024, 1, 1)  # Or from date
+    
+    def initialise_agent(self) -> None:
+        if self.import_actions_from_memory:
+            latest_saved_memories = self.long_term_memory.search(
+                limit=self.import_actions_from_memory,
+                from_=self.import_actions_from_memory_from,
+            )
+            # Inject memories into agent history
+            self.agent.history[1:1] = [m.metadata_dict for m in latest_saved_memories]
+```
+
+### Prompt Storage
+
+```python
+class PromptTableHandler:
+    def save_prompt(self, prompt: str) -> None:
+        """Save updated system prompt"""
+        
+    def get_latest_prompt(self) -> str | None:
+        """Retrieve current prompt"""
+```
+
+Modified prompts persist across runs.
+
+## Configuration Options
+
+### Iteration Control
+
+```python
+class MyMicrochainAgent(DeployableMicrochainAgentAbstract):
+    max_iterations = 50  # Maximum iterations per run
+    sleep_between_iterations = 5  # Seconds to sleep between iterations
+    allow_stop = True  # Agent can stop itself early
+```
+
+### Memory Configuration
+
+```python
+import_actions_from_memory = 20  # Import last 20 actions
+import_actions_from_memory_from = DatetimeUTC(2024, 11, 1)  # Only since Nov 2024
+```
+
+### Model Selection
+
+```python
+model = SupportedModel.gpt_4o  # Default
+model = SupportedModel.llama_31_instruct  # Open source alternative
+```
+
+### Callbacks
+
+```python
+def before_iteration_callback(self) -> CallbackReturn:
+    # Custom logic before each iteration
+    if some_condition:
+        return CallbackReturn.STOP
+    return CallbackReturn.CONTINUE
+
+def after_iteration_callback(self) -> CallbackReturn:
+    # Custom logic after each iteration
+    return CallbackReturn.CONTINUE
+```
+
+## Best Practices
+
+### For Base Microchain Agent
+
+```python
+agent = DeployableMicrochainAgent(
+    enable_langfuse=True,  # Track agent reasoning
+    max_iterations=50,  # Prevent infinite loops
+)
+```
+
+### For Modifiable Prompt Agents
+
+```python
+# Start with minimal prompt
+agent = DeployableMicrochainModifiableSystemPromptAgent0(
+    max_iterations=30,  # Give time to explore
+    import_actions_from_memory=5,  # Learn from recent history
+)
+```
+
+### For Goal Manager Agent
+
+```python
+agent = DeployableMicrochainWithGoalManagerAgent0(
+    max_iterations=100,  # Goals may take time
+    enable_langfuse=True,  # Track goal achievement
+)
+```
+
+### Monitoring
+
+```python
+# Agent history is saved after each iteration
+history = LongTermMemoryTableHandler.from_agent_identifier(agent.identifier)
+messages = history.search(limit=100)
+
+for message in messages:
+    print(f"{message.role}: {message.content}")
+```
+
+## Troubleshooting
+
+### Agent Loops Infinitely
+
+```python
+# Set reasonable max_iterations
+max_iterations = 50  # Not None
+
+# Ensure agent can stop
+allow_stop = True
+```
+
+### Agent Forgets Context
+
+```python
+# Import more memory
+import_actions_from_memory = 20
+
+# Or import all recent memory
+import_actions_from_memory_from = DatetimeUTC(2024, 11, 1)
+```
+
+### Prompt Modifications Lost
+
+```python
+# Verify prompt handler is saving
+def save_agent_history(self, initial_formatted_system_prompt, save_last_n):
+    if self.agent.system_prompt != initial_formatted_system_prompt:
+        self.prompt_handler.save_prompt(
+            get_editable_prompt_from_agent(self.agent)
+        )
+```
+
+## Research Experiments
+
+Microchain agents are used for research on:
+
+- **Self-improvement**: Can agents improve through prompt modification?
+- **Autonomous goal-setting**: Do self-set goals improve performance?
+- **Multi-agent dynamics**: NFT game with 7 competing agents
+- **Open-source viability**: Llama 3.1 vs GPT-4o comparison
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Specialized Agents" icon="star" href="/agents/specialized-agents">
+    Explore purpose-built agents
+  </Card>
+  <Card title="Agent Overview" icon="grid" href="/agents/overview">
+    Back to agent gallery
+  </Card>
+</CardGroup>

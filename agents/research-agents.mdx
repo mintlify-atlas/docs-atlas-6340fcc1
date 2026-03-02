@@ -1,0 +1,334 @@
+---
+title: Research Agents
+description: Advanced agents that perform web research and multi-step analysis for evidence-based predictions
+---
+
+Research agents go beyond simple predictions by gathering evidence from the web, analyzing multiple sources, and using sophisticated reasoning to make informed predictions.
+
+## Available Agents
+
+<CardGroup cols={2}>
+  <Card title="Advanced Agent" icon="brain">
+    Evidence-based predictions using Google search and web scraping
+  </Card>
+  <Card title="Think Thoroughly" icon="lightbulb">
+    Deep analysis with its own research methodology
+  </Card>
+  <Card title="Think Thoroughly Prophet" icon="book">
+    Combines deep analysis with Prediction Prophet research
+  </Card>
+  <Card title="GPTR Agent" icon="magnifying-glass-chart">
+    Uses GPT Researcher for comprehensive market analysis
+  </Card>
+</CardGroup>
+
+## Advanced Agent
+
+The most basic evidence-based agent that searches Google, scrapes web content, and uses an LLM to make predictions.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py advanced_agent omen
+```
+
+### Implementation
+
+```python
+class AdvancedAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 4
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Search for results on Google
+        google_results = search_google_serper(market.question)
+        
+        # Filter out Manifold results
+        google_results = [url for url in google_results if "manifold" not in url]
+        
+        if not google_results:
+            return None
+        
+        # Scrape and truncate content
+        contents = [
+            scraped[:10000]
+            for url in google_results[:5]
+            if (scraped := web_scrape(url))
+        ]
+        
+        if not contents:
+            return None
+        
+        # Get LLM prediction
+        probability, confidence = llm(market.question, contents)
+        
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+            reasoning="I asked Google and LLM to do it!",
+        )
+```
+
+**Key Features:**
+- Uses Google Serper API for web search
+- Scrapes top 5 results (excluding Manifold)
+- Truncates content to 10,000 characters per page
+- Uses GPT-4o-mini for probability estimation
+- Returns both probability and confidence
+
+### LLM Prompting
+
+```python
+def llm(question: str, contents: list[str]) -> tuple[float, float]:
+    agent = Agent(
+        OpenAIModel("gpt-4o-mini", provider=get_openai_provider()),
+        system_prompt="You are professional prediction market trading agent.",
+    )
+    result = agent.run_sync(
+        f"""Today is {utcnow()}.
+        
+        Given the following question and content from google search, 
+        what's the probability that the thing in the question will happen?
+        
+        Question: {question}
+        
+        Content: {contents}
+        
+        Return only the probability float number and confidence float number, 
+        separated by space, nothing else."""
+    ).output
+    probability, confidence = map(float, result.split())
+    return probability, confidence
+```
+
+## Think Thoroughly Agent
+
+Sophisticated agent that performs deep analysis with its own research methodology and uses Pinecone for market similarity search.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py think_thoroughly omen
+```
+
+### Implementation
+
+```python
+class DeployableThinkThoroughlyAgent(DeployableThinkThoroughlyAgentBase):
+    agent_class = ThinkThoroughlyWithItsOwnResearch
+    bet_on_n_markets_per_run = 1
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=None,
+        )
+    
+    def before_process_markets(self, market_type: MarketType) -> None:
+        # Ensure all markets are indexed in Pinecone
+        self.agent.pinecone_handler.insert_all_omen_markets_if_not_exists()
+```
+
+**Key Features:**
+- Comprehensive research with multiple search queries
+- Uses Pinecone vector DB for finding similar markets
+- Full Kelly betting strategy ($1-$5 range)
+- Only bets on 1 market per run due to computational cost
+- No maximum price impact limit
+
+### Research Process
+
+The Think Thoroughly agent follows this workflow:
+
+1. **Question Analysis**: Breaks down the market question
+2. **Similar Markets**: Finds related markets using Pinecone
+3. **Web Research**: Conducts targeted searches
+4. **Evidence Collection**: Gathers supporting/opposing evidence
+5. **Synthesis**: Combines findings into final prediction
+6. **Confidence Calibration**: Adjusts confidence based on evidence quality
+
+## Think Thoroughly Prophet Agent
+
+Combines the Think Thoroughly methodology with Prediction Prophet's research capabilities.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py think_thoroughly_prophet omen
+```
+
+### Implementation
+
+```python
+class DeployableThinkThoroughlyProphetResearchAgent(DeployableThinkThoroughlyAgentBase):
+    agent_class = ThinkThoroughlyWithPredictionProphetResearch
+    bet_on_n_markets_per_run = 1
+    
+    # Uses tiny bets - not yet optimized for profitability
+```
+
+**Key Features:**
+- Leverages Prediction Prophet's research tools
+- Uses Tavily API for news search
+- Combines Think Thoroughly reasoning with Prophet research
+- Currently uses conservative bet sizing
+
+### Research Integration
+
+```python
+# Prediction Prophet provides:
+- Subquery generation (breaks question into searchable parts)
+- Multi-source web scraping
+- News relevance filtering
+- Source credibility assessment
+- Evidence aggregation
+```
+
+## GPTR Agent
+
+Uses the [GPT Researcher](https://github.com/assafelovic/gpt-researcher) library for comprehensive research reports before making predictions.
+
+### Usage
+
+```bash
+python prediction_market_agent/run_agent.py gptr_agent omen
+```
+
+### Implementation
+
+```python
+class GPTRAgent(DeployableTraderAgent):
+    bet_on_n_markets_per_run = 4
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(0.1),
+                max_=USD(8),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.57,
+        )
+
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Generate research report
+        report = gptr_research_sync(market.question)
+        
+        # Make prediction based on report
+        prediction = prophet_make_prediction(
+            market_question=market.question,
+            additional_information=report,
+            agent=Agent(OpenAIModel("gpt-4o")),
+            include_reasoning=True,
+        )
+        return prediction
+```
+
+**Key Features:**
+- Generates comprehensive research reports using GPT Researcher
+- Uses Tavily for web search
+- Produces detailed analysis before prediction
+- Full Kelly betting with 57% max price impact
+- Bet range: $0.10 - $8.00
+
+### GPTR Research Process
+
+```python
+def gptr_research_sync(query: str) -> str:
+    researcher = GPTResearcher(query=query, report_type="research_report")
+    asyncio.run(researcher.conduct_research())
+    report: str = asyncio.run(researcher.write_report())
+    return report
+```
+
+GPT Researcher automatically:
+- Generates search queries
+- Scrapes multiple sources
+- Filters relevant information
+- Synthesizes findings into a report
+- Includes citations and sources
+
+### GPTR Highest Liquidity Variant
+
+```bash
+python prediction_market_agent/run_agent.py gptr_agent_highest_liquidity omen
+```
+
+```python
+class GPTRHighestLiquidityAgent(GPTRAgent):
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    bet_on_n_markets_per_run = 2
+    same_market_trade_interval = FixedInterval(timedelta(days=7))
+```
+
+## Performance Comparison
+
+| Agent | Research Method | Bets/Run | Bet Size | API Costs | Speed |
+|-------|----------------|----------|----------|-----------|-------|
+| Advanced | Google + Scrape | 4 | Default | Low | Fast |
+| Think Thoroughly | Custom + Pinecone | 1 | $1-$5 | Medium | Slow |
+| Think Prophet | Prophet + Custom | 1 | Tiny | Medium | Slow |
+| GPTR | GPT Researcher | 4 | $0.10-$8 | High | Medium |
+| GPTR High Liq | GPT Researcher | 2 | $0.10-$8 | High | Medium |
+
+## Best Practices
+
+### API Key Configuration
+
+Research agents require additional API keys:
+
+```bash
+# Required
+OPENAI_API_KEY=sk-...
+
+# For Advanced Agent
+SERPER_API_KEY=...
+
+# For Think Thoroughly / GPTR
+TAVILY_API_KEY=...
+PINECONE_API_KEY=...
+```
+
+### Cost Optimization
+
+```python
+# Reduce research costs
+DeployablePredictionProphetAgent(
+    subqueries_limit=3,  # Fewer searches
+    min_scraped_sites=3,  # Fewer sites to scrape
+)
+
+# Or use cheaper models
+AdvancedAgent()  # Uses gpt-4o-mini
+```
+
+### Production Configuration
+
+```python
+# Think Thoroughly for high-value markets
+agent = DeployableThinkThoroughlyAgent(
+    enable_langfuse=True,
+    bet_on_n_markets_per_run=1,
+    place_trades=True,
+)
+
+# GPTR for balanced approach
+agent = GPTRAgent(
+    bet_on_n_markets_per_run=4,
+    enable_langfuse=True,
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Prophet Agents" icon="crystal-ball" href="/agents/prophet-agents">
+    Explore Prediction Prophet-based agents
+  </Card>
+  <Card title="Microchain Agents" icon="link" href="/agents/microchain-agents">
+    Learn about self-learning agents
+  </Card>
+</CardGroup>

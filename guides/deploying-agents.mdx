@@ -1,0 +1,459 @@
+---
+title: Deploying Agents to Production
+description: Guide to deploying your prediction market agents to production environments
+---
+
+## Overview
+
+Once you've created and tested your agent, you can deploy it to production to trade on live prediction markets. This guide covers deployment strategies, configuration, and best practices.
+
+## Deployment Architecture
+
+The Prediction Market Agent framework is designed to run as scheduled jobs in cloud environments, particularly Google Kubernetes Engine (GKE).
+
+### Key Components
+
+<CardGroup cols={2}>
+  <Card title="run_agent.py" icon="play">
+    Main entrypoint that orchestrates agent execution
+  </Card>
+  
+  <Card title="DeployableAgent" icon="robot">
+    Base class that handles market selection and trading
+  </Card>
+  
+  <Card title="Environment Variables" icon="key">
+    API keys and configuration stored securely
+  </Card>
+  
+  <Card title="Market APIs" icon="chart-line">
+    Integration with Omen, Manifold, and Polymarket
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+<Steps>
+  <Step title="Environment Setup">
+    Ensure your `.env` file contains all required API keys:
+    
+    ```bash .env
+    OPENAI_API_KEY=sk-...
+    SERPER_API_KEY=...
+    TAVILY_API_KEY=...
+    BET_FROM_PRIVATE_KEY=0x...
+    GRAPH_API_KEY=...
+    ```
+  </Step>
+  
+  <Step title="Test Locally">
+    Run your agent locally to verify it works correctly:
+    
+    ```bash
+    python prediction_market_agent/run_agent.py your_agent omen
+    ```
+  </Step>
+  
+  <Step title="Verify Market Access">
+    Confirm your agent can connect to the target market platform and retrieve markets.
+  </Step>
+</Steps>
+
+## Deployment Process
+
+### 1. Register Your Agent
+
+Ensure your agent is registered in `run_agent.py`:
+
+```python prediction_market_agent/run_agent.py
+from enum import Enum
+from prediction_market_agent_tooling.deploy.agent import DeployableAgent
+from your_module import YourCustomAgent
+
+class RunnableAgent(str, Enum):
+    coinflip = "coinflip"
+    advanced_agent = "advanced_agent"
+    your_agent = "your_agent"  # Add your agent here
+
+RUNNABLE_AGENTS: dict[RunnableAgent, type[DeployableAgent]] = {
+    RunnableAgent.coinflip: DeployableCoinFlipAgent,
+    RunnableAgent.advanced_agent: AdvancedAgent,
+    RunnableAgent.your_agent: YourCustomAgent,  # Map to your class
+}
+```
+
+### 2. Configure Agent Parameters
+
+Set deployment-specific parameters in your agent class:
+
+```python
+class YourProductionAgent(DeployableTraderAgent):
+    # How many markets to trade on per execution
+    bet_on_n_markets_per_run = 4
+    
+    # Sort markets by liquidity for better execution
+    get_markets_sort_by = SortBy.HIGHEST_LIQUIDITY
+    
+    # Prevent trading on the same market too frequently
+    same_market_trade_interval = FixedInterval(timedelta(days=1))
+    
+    # Only trade on recent markets
+    trade_on_markets_created_after = DatetimeUTC(2024, 1, 1, 0)
+```
+
+### 3. Implement Betting Strategy
+
+For production agents, implement a proper betting strategy to manage risk:
+
+```python
+from prediction_market_agent_tooling.deploy.betting_strategy import (
+    BettingStrategy,
+    FullBinaryKellyBettingStrategy,
+)
+from prediction_market_agent_tooling.gtypes import USD
+from prediction_market_agent.agents.utils import get_maximum_possible_bet_amount
+
+class YourProductionAgent(DeployableTraderAgent):
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+        )
+```
+
+<Note>
+Without implementing `get_betting_strategy()`, your agent will place only tiny test bets by default.
+</Note>
+
+### 4. Local Deployment
+
+For simple deployments, run your agent as a scheduled cron job:
+
+```bash
+# Run agent every hour
+0 * * * * cd /path/to/repo && python prediction_market_agent/run_agent.py your_agent omen
+```
+
+### 5. Cloud Deployment (GKE)
+
+For production deployments, use Google Kubernetes Engine:
+
+<Steps>
+  <Step title="Create Docker Container">
+    ```dockerfile Dockerfile
+    FROM python:3.11-slim
+    
+    WORKDIR /app
+    
+    # Install Poetry
+    RUN pip install poetry
+    
+    # Copy project files
+    COPY pyproject.toml poetry.lock ./
+    COPY prediction_market_agent/ ./prediction_market_agent/
+    
+    # Install dependencies
+    RUN poetry install --no-dev
+    
+    # Set entrypoint
+    ENTRYPOINT ["poetry", "run", "python", "prediction_market_agent/run_agent.py"]
+    ```
+  </Step>
+  
+  <Step title="Build and Push Image">
+    ```bash
+    docker build -t gcr.io/your-project/your-agent:latest .
+    docker push gcr.io/your-project/your-agent:latest
+    ```
+  </Step>
+  
+  <Step title="Create Kubernetes CronJob">
+    ```yaml cronjob.yaml
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: your-agent-cronjob
+    spec:
+      schedule: "0 * * * *"  # Run every hour
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              containers:
+              - name: your-agent
+                image: gcr.io/your-project/your-agent:latest
+                args: ["your_agent", "omen"]
+                env:
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-secrets
+                      key: openai-api-key
+                - name: BET_FROM_PRIVATE_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-secrets
+                      key: bet-private-key
+              restartPolicy: OnFailure
+    ```
+  </Step>
+  
+  <Step title="Deploy to Cluster">
+    ```bash
+    kubectl apply -f cronjob.yaml
+    ```
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Required environment variables for deployment:
+
+<AccordionGroup>
+  <Accordion title="Required Keys">
+    | Variable | Purpose | Get From |
+    |----------|---------|----------|
+    | `OPENAI_API_KEY` | LLM API access | https://platform.openai.com |
+    | `BET_FROM_PRIVATE_KEY` | Wallet for placing bets | Your Gnosis Chain wallet |
+    | `GRAPH_API_KEY` | Query market data | https://thegraph.com |
+  </Accordion>
+  
+  <Accordion title="Optional Keys (Recommended)">
+    | Variable | Purpose | Get From |
+    |----------|---------|----------|
+    | `SERPER_API_KEY` | Google search integration | https://serper.dev |
+    | `TAVILY_API_KEY` | Web research | https://tavily.com |
+    | `LANGFUSE_SECRET_KEY` | Observability | https://langfuse.com |
+    | `PINECONE_API_KEY` | Vector storage | https://pinecone.io |
+  </Accordion>
+  
+  <Accordion title="Social Media Keys (Optional)">
+    | Variable | Purpose |
+    |----------|----------|
+    | `FARCASTER_PRIVATE_KEY` | Post predictions to Farcaster |
+    | `TWITTER_ACCESS_TOKEN` | Post predictions to Twitter |
+    | `TWITTER_ACCESS_TOKEN_SECRET` | Twitter API access |
+    | `TWITTER_BEARER_TOKEN` | Twitter API access |
+    | `TWITTER_API_KEY` | Twitter API access |
+    | `TWITTER_API_KEY_SECRET` | Twitter API access |
+  </Accordion>
+</AccordionGroup>
+
+## Wallet Setup
+
+Your agent needs a wallet with funds to place bets:
+
+<Steps>
+  <Step title="Create Wallet">
+    Set up a wallet on Gnosis Chain using MetaMask:
+    - Install MetaMask browser extension
+    - Create a new wallet or import existing
+    - Save the private key securely
+  </Step>
+  
+  <Step title="Add Gnosis Chain Network">
+    Configure MetaMask for Gnosis Chain:
+    - Click network selector in top left
+    - Click "Add a custom network"
+    - Enter network details:
+      - **Name**: Gnosis Chain
+      - **RPC URL**: https://rpc.gnosischain.com
+      - **Chain ID**: 100
+      - **Symbol**: XDAI
+  </Step>
+  
+  <Step title="Fund Wallet">
+    Get xDai tokens for placing bets:
+    - Bridge from Ethereum mainnet
+    - Use a faucet for testing
+    - Contact team for hackathon funds
+  </Step>
+  
+  <Step title="Set Private Key">
+    Add your wallet's private key to `.env`:
+    ```bash
+    BET_FROM_PRIVATE_KEY=0x1234567890abcdef...
+    ```
+    
+    <Warning>
+    Never commit your private key to version control!
+    </Warning>
+  </Step>
+</Steps>
+
+## Monitoring and Observability
+
+### Dune Dashboard
+
+Track your deployed agent's performance on the [Dune Dashboard](https://dune.com/gnosischain_team/ai-agents-overview-omen-prediction-markets):
+
+- Total bets placed
+- Win rate and profitability
+- Gas costs and fees
+- Historical performance
+
+### Presagio Leaderboard
+
+View your agent's ranking on the [Presagio Leaderboard](https://presagio.pages.dev/leaderboard/agents) with:
+
+- Success rate percentage
+- Total profits/losses
+- Number of markets traded
+- Comparison with other agents
+
+### Logging
+
+Implement comprehensive logging in your agent:
+
+```python
+from prediction_market_agent_tooling.loggers import logger
+
+def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+    logger.info(f"Evaluating market: {market.question}")
+    
+    try:
+        # Your prediction logic
+        result = make_prediction(market)
+        logger.info(f"Prediction: {result.p_yes}, Confidence: {result.confidence}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to predict for market {market.id}: {e}")
+        return None
+```
+
+## Production Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start Small" icon="seedling">
+    Begin with small bet amounts (1-5 xDai) until your agent proves profitable.
+  </Card>
+  
+  <Card title="Monitor Performance" icon="chart-line">
+    Check Dune Dashboard and logs daily to catch issues early.
+  </Card>
+  
+  <Card title="Rate Limits" icon="gauge">
+    Respect API rate limits to avoid service disruptions.
+  </Card>
+  
+  <Card title="Error Handling" icon="shield-check">
+    Implement robust error handling to prevent crashes.
+  </Card>
+  
+  <Card title="Security" icon="lock">
+    Store private keys securely using secrets management.
+  </Card>
+  
+  <Card title="Cost Management" icon="wallet">
+    Track API costs (OpenAI, Tavily) to maintain profitability.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Agent not placing bets">
+    **Possible causes:**
+    - Insufficient wallet balance
+    - Markets don't pass `verify_market()` checks
+    - API keys are invalid
+    - Network connectivity issues
+    
+    **Solutions:**
+    - Check wallet balance on block explorer
+    - Review `verify_market()` logic
+    - Verify all API keys are correct
+    - Test network connectivity
+  </Accordion>
+  
+  <Accordion title="High API costs">
+    **Possible causes:**
+    - Too many LLM calls per prediction
+    - Using expensive models (GPT-4)
+    - Trading on too many markets
+    
+    **Solutions:**
+    - Reduce `bet_on_n_markets_per_run`
+    - Switch to cheaper models (GPT-4o-mini)
+    - Implement caching for repeated queries
+    - Limit web scraping depth
+  </Accordion>
+  
+  <Accordion title="Low prediction accuracy">
+    **Possible causes:**
+    - Poor data sources
+    - Inadequate prompt engineering
+    - Not enough context for LLM
+    
+    **Solutions:**
+    - Improve web scraping quality
+    - Refine prompts with more specific instructions
+    - Increase context window
+    - Study successful agents like ProphetGPT4o
+  </Accordion>
+</AccordionGroup>
+
+## Example: Prophet GPT-4o Agent
+
+Here's a production-ready agent configuration from the leaderboard:
+
+```python
+class DeployablePredictionProphetGPT4oAgent(DeployableTraderAgentER):
+    bet_on_n_markets_per_run = 4
+    agent: PredictionProphetAgent
+
+    def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+        return FullBinaryKellyBettingStrategy(
+            max_position_amount=get_maximum_possible_bet_amount(
+                min_=USD(1),
+                max_=USD(5),
+                trading_balance=market.get_trade_balance(APIKeys()),
+            ),
+            max_price_impact=0.7,
+        )
+
+    def load(self) -> None:
+        super().load()
+        model = "gpt-4o-2024-08-06"
+        api_keys = APIKeys()
+
+        self.agent = PredictionProphetAgent(
+            research_agent=Agent(
+                OpenAIModel(
+                    model,
+                    provider=get_openai_provider(api_key=api_keys.openai_api_key),
+                ),
+                model_settings=ModelSettings(temperature=0.7),
+            ),
+            prediction_agent=Agent(
+                OpenAIModel(
+                    model,
+                    provider=get_openai_provider(api_key=api_keys.openai_api_key),
+                ),
+                model_settings=ModelSettings(temperature=0.0),
+            ),
+            include_reasoning=True,
+            logger=logger,
+        )
+```
+
+This agent has achieved:
+- 60% success rate
+- $834+ in profits
+- Top ranking on the leaderboard
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Benchmark Your Agent" icon="chart-line" href="/guides/benchmarking">
+    Test performance against human traders
+  </Card>
+  
+  <Card title="Join the Community" icon="users" href="https://discord.gg/AsnV6nCvpx">
+    Get help and share insights
+  </Card>
+</CardGroup>

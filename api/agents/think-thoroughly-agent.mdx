@@ -1,0 +1,501 @@
+---
+title: Think Thoroughly Agent
+description: Multi-scenario reasoning agent using CrewAI for systematic market analysis
+---
+
+## Overview
+
+The Think Thoroughly Agent performs comprehensive market analysis by breaking down questions into hypothetical and conditional scenarios, researching each scenario independently, and synthesizing findings into a final prediction. It uses CrewAI for orchestrating multiple research and prediction tasks.
+
+## Base Class: ThinkThoroughlyBase
+
+Abstract base class for Think Thoroughly agent variants.
+
+```python
+class ThinkThoroughlyBase(ABC):
+    identifier: AgentIdentifier
+    model: KnownModelName
+    model_for_generate_prediction_for_one_outcome: KnownModelName
+    
+    def __init__(self, enable_langfuse: bool, memory: bool = True) -> None
+```
+
+### Configuration Properties
+
+<ParamField path="identifier" type="AgentIdentifier">
+  Unique identifier for the agent variant
+</ParamField>
+
+<ParamField path="model" type="KnownModelName">
+  Model used for scenario generation and final decision
+</ParamField>
+
+<ParamField path="model_for_generate_prediction_for_one_outcome" type="KnownModelName">
+  Model used for individual scenario predictions
+</ParamField>
+
+<ParamField path="enable_langfuse" type="bool">
+  Enable Langfuse observability
+</ParamField>
+
+<ParamField path="memory" type="bool" default="True">
+  Enable long-term memory storage
+</ParamField>
+
+### Core Components
+
+<ParamField path="subgraph_handler" type="OmenSubgraphHandler">
+  Handles Omen market data queries
+</ParamField>
+
+<ParamField path="pinecone_handler" type="PineconeHandler">
+  Vector database for finding correlated markets
+</ParamField>
+
+<ParamField path="_long_term_memory" type="LongTermMemoryTableHandler | None">
+  Stores predictions and scenarios for future reference
+</ParamField>
+
+### Methods
+
+#### answer_binary_market
+
+```python
+def answer_binary_market(
+    self,
+    question: str,
+    n_iterations: int = 1,
+    created_time: DatetimeUTC | None = None,
+) -> ProbabilisticAnswer | None
+```
+
+Main prediction method that orchestrates the full multi-scenario analysis.
+
+<ParamField path="question" type="str">
+  The market question to predict on
+</ParamField>
+
+<ParamField path="n_iterations" type="int" default="1">
+  Number of iterative refinement passes. Higher values allow predictions to be adjusted based on previous scenario results.
+</ParamField>
+
+<ParamField path="created_time" type="DatetimeUTC | None">
+  When the market was created (used for time-based analysis)
+</ParamField>
+
+<ResponseField name="return" type="ProbabilisticAnswer | None">
+  Final probabilistic prediction synthesized from all scenarios
+</ResponseField>
+
+#### get_hypohetical_scenarios
+
+```python
+def get_hypohetical_scenarios(self, question: str) -> Scenarios
+```
+
+Generates hypothetical alternative phrasings and interpretations of the question.
+
+<ResponseField name="return" type="Scenarios">
+  List of 5 hypothetical scenarios, plus the original question
+</ResponseField>
+
+#### get_required_conditions
+
+```python
+def get_required_conditions(self, question: str) -> Scenarios
+```
+
+Identifies necessary conditions that must be true for the question to resolve positively.
+
+<ResponseField name="return" type="Scenarios">
+  List of 3 conditional scenarios
+</ResponseField>
+
+#### generate_prediction_for_one_outcome
+
+```python
+@staticmethod
+def generate_prediction_for_one_outcome(
+    unique_id: UUID,
+    model: KnownModelName,
+    scenario: str,
+    original_question: str,
+    previous_scenarios_and_answers: list[tuple[str, AnswerWithScenario]] | None = None,
+) -> AnswerWithScenario | None
+```
+
+Researches and predicts a single scenario. Must be implemented by subclasses.
+
+#### generate_final_decision
+
+```python
+def generate_final_decision(
+    self,
+    question: str,
+    scenarios_with_probabilities: list[tuple[str, AnswerWithScenario]],
+    created_time: DatetimeUTC | None,
+    research_report: str | None = None,
+) -> ProbabilisticAnswer
+```
+
+Synthesizes all scenario predictions into a final answer.
+
+#### get_correlated_markets
+
+```python
+def get_correlated_markets(self, question: str) -> list[CorrelatedMarketInput]
+```
+
+Finds similar markets using vector similarity search.
+
+## Implementation Variants
+
+### ThinkThoroughlyWithItsOwnResearch
+
+Uses CrewAI to perform independent web research for each scenario.
+
+```python
+class ThinkThoroughlyWithItsOwnResearch(ThinkThoroughlyBase):
+    identifier = THINK_THOROUGHLY
+    model = "openai:gpt-4-turbo-2024-04-09"
+    model_for_generate_prediction_for_one_outcome = "openai:gpt-4-turbo-2024-04-09"
+```
+
+#### Research Process
+
+For each scenario:
+
+1. **Research Task**: Uses Tavily search to gather web evidence
+2. **Prediction Task**: Analyzes research to generate probability
+3. **Sequential Processing**: Research output feeds into prediction
+
+```python
+task_research_one_outcome = Task(
+    description=RESEARCH_OUTCOME_PROMPT,
+    agent=researcher,
+    expected_output=RESEARCH_OUTCOME_OUTPUT,
+)
+
+task_create_probability_for_one_outcome = Task(
+    description=PROBABILITY_FOR_ONE_OUTCOME_PROMPT,
+    expected_output=PROBABILITY_CLASS_OUTPUT,
+    agent=predictor,
+    output_pydantic=ProbabilisticAnswer,
+    context=[task_research_one_outcome],
+)
+```
+
+### ThinkThoroughlyWithPredictionProphetResearch
+
+Uses PredictionProphet library for research instead of CrewAI.
+
+```python
+class ThinkThoroughlyWithPredictionProphetResearch(ThinkThoroughlyBase):
+    identifier = THINK_THOROUGHLY_PROPHET
+    model = "openai:gpt-4-turbo-2024-04-09"
+    model_for_generate_prediction_for_one_outcome = "openai:gpt-4o-2024-08-06"
+```
+
+#### Key Differences
+
+- Uses `prophet_research()` for web research
+- Uses `prophet_make_prediction()` for predictions
+- **No iterative refinement**: Does not support `previous_scenarios_and_answers`
+- Sets `initial_subqueries_limit=0` (agent generates its own subqueries)
+
+## Deployable Agents
+
+### DeployableThinkThoroughlyAgent
+
+Production agent using internal research.
+
+```python
+class DeployableThinkThoroughlyAgent(DeployableThinkThoroughlyAgentBase):
+    agent_class = ThinkThoroughlyWithItsOwnResearch
+    bet_on_n_markets_per_run = 1
+```
+
+#### Betting Strategy
+
+```python
+def get_betting_strategy(self, market: AgentMarket) -> BettingStrategy:
+    return FullBinaryKellyBettingStrategy(
+        max_position_amount=get_maximum_possible_bet_amount(
+            min_=USD(1),
+            max_=USD(5),
+            trading_balance=market.get_trade_balance(APIKeys()),
+        ),
+        max_price_impact=None,  # No price impact limit
+    )
+```
+
+#### Usage
+
+```python
+from prediction_market_agent.agents.think_thoroughly_agent.deploy import (
+    DeployableThinkThoroughlyAgent
+)
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+agent = DeployableThinkThoroughlyAgent(
+    enable_langfuse=True,
+    place_trades=True,
+)
+
+agent.deploy(market_type=MarketType.OMEN)
+```
+
+### DeployableThinkThoroughlyProphetResearchAgent
+
+Production agent using PredictionProphet research.
+
+```python
+class DeployableThinkThoroughlyProphetResearchAgent(
+    DeployableThinkThoroughlyAgentBase
+):
+    agent_class = ThinkThoroughlyWithPredictionProphetResearch
+    bet_on_n_markets_per_run = 1
+```
+
+**Note**: Betting strategy is currently disabled (commented out) pending profitability analysis.
+
+## Prediction Workflow
+
+The Think Thoroughly agent follows a systematic 5-step process:
+
+### Step 1: Generate Scenarios
+
+```python
+hypothetical_scenarios = self.get_hypohetical_scenarios(question)
+conditional_scenarios = self.get_required_conditions(question)
+```
+
+- **Hypothetical scenarios**: 5 alternative phrasings/interpretations
+- **Conditional scenarios**: 3 necessary conditions
+- **Total**: ~8 scenarios to analyze
+
+### Step 2: Parallel Research
+
+```python
+sub_predictions = par_generator(
+    items=[
+        (enable_langfuse, unique_id, model, scenario, question, scenarios_with_probs, generate_prediction_for_one_outcome)
+        for scenario in all_scenarios
+    ],
+    func=process_scenario,
+)
+```
+
+Researches all scenarios in parallel using multiprocessing.
+
+### Step 3: Collect Predictions
+
+```python
+scenarios_with_probs = []
+for scenario, prediction in sub_predictions:
+    if prediction is None:
+        continue
+    scenarios_with_probs.append((scenario, prediction))
+    self.save_answer_to_long_term_memory(prediction)
+```
+
+Gathers predictions that succeeded (some may fail due to research errors).
+
+### Step 4: Find Correlated Markets
+
+```python
+correlated_markets = self.get_correlated_markets(question)
+```
+
+Uses Pinecone vector search to find similar markets for additional context.
+
+### Step 5: Synthesize Final Decision
+
+```python
+final_answer = self.generate_final_decision(
+    question,
+    scenarios_with_probs,
+    created_time=created_time,
+    research_report=research_report,  # Only for Prophet variant
+)
+```
+
+Weighs all scenario predictions and correlated market data to produce final probability.
+
+## CrewAI Integration
+
+### Agent Roles
+
+#### Research Analyst
+
+```python
+Agent(
+    role="Research Analyst",
+    goal="Research and report on some future event, giving high quality and nuanced analysis",
+    backstory=f"Current date is {current_date}. You are a senior research analyst who is adept at researching and reporting on future events.",
+    tools=[tavily_search_tool],
+)
+```
+
+#### Professional Gambler
+
+```python
+Agent(
+    role="Professional Gambler",
+    goal="Predict, based on some research you are presented with, whether or not a given event will occur",
+    backstory=f"Current date is {current_date}. You are a professional gambler who is adept at predicting and betting on the outcomes of future events.",
+)
+```
+
+### Task Orchestration
+
+```python
+crew = Crew(
+    agents=[researcher, predictor],
+    tasks=[task_research, task_predict],
+    process=Process.sequential,
+)
+
+output = crew.kickoff(inputs={"sentence": scenario})
+```
+
+## Data Models
+
+### Scenarios
+
+```python
+class Scenarios(BaseModel):
+    scenarios: list[str]
+```
+
+### AnswerWithScenario
+
+```python
+class AnswerWithScenario(BaseModel):
+    scenario: str
+    original_question: str
+    p_yes: float
+    confidence: float
+    reasoning: str
+```
+
+### CorrelatedMarketInput
+
+```python
+class CorrelatedMarketInput(BaseModel):
+    question_title: str
+    current_p_yes: float
+```
+
+## Advanced Usage
+
+### Custom Number of Iterations
+
+```python
+agent = DeployableThinkThoroughlyAgent()
+agent.agent = agent.agent_class(enable_langfuse=True)
+
+# Run 3 iterations for iterative refinement
+answer = agent.agent.answer_binary_market(
+    question="Will AI achieve AGI by 2030?",
+    n_iterations=3,
+)
+```
+
+### Direct Scenario Analysis
+
+```python
+from prediction_market_agent.agents.think_thoroughly_agent.think_thoroughly_agent import (
+    ThinkThoroughlyWithItsOwnResearch
+)
+
+agent = ThinkThoroughlyWithItsOwnResearch(enable_langfuse=False)
+
+# Get scenario breakdowns
+hypothetical = agent.get_hypohetical_scenarios(
+    "Will SpaceX land humans on Mars by 2030?"
+)
+conditional = agent.get_required_conditions(
+    "Will SpaceX land humans on Mars by 2030?"
+)
+
+print(f"Hypothetical scenarios: {hypothetical.scenarios}")
+print(f"Required conditions: {conditional.scenarios}")
+```
+
+### Local Testing
+
+```python
+if __name__ == "__main__":
+    agent = DeployableThinkThoroughlyAgent(
+        place_trades=False,
+        store_predictions=False,
+        store_trades=False,
+    )
+    agent.deploy_local(
+        market_type=MarketType.OMEN,
+        sleep_time=540,  # 9 minutes
+        run_time=180,    # 3 minutes per run
+    )
+```
+
+## Performance Considerations
+
+### Parallel Processing
+
+Uses `par_generator` with multiprocessing for parallel scenario research:
+
+- Faster than sequential processing
+- Each scenario researched independently
+- Handles failures gracefully (continues with successful predictions)
+
+### Memory Management
+
+Saves all intermediate predictions to long-term memory:
+
+```python
+self.save_answer_to_long_term_memory(answer_with_scenario)
+```
+
+This allows:
+- Learning from past predictions
+- Debugging scenario-level reasoning
+- Building up historical knowledge
+
+### Time Analysis
+
+Considers temporal aspects:
+
+```python
+event_date = get_event_date_from_question(question)
+n_remaining_days = (event_date - utcnow()).days if event_date else "Unknown"
+n_market_open_days = (utcnow() - created_time).days if created_time else "Unknown"
+```
+
+## Required API Keys
+
+<ParamField path="OPENAI_API_KEY" type="str" required>
+  For GPT-4 models used in research and prediction
+</ParamField>
+
+<ParamField path="TAVILY_API_KEY" type="str" required>
+  For web search functionality
+</ParamField>
+
+<ParamField path="PINECONE_API_KEY" type="str" required>
+  For vector similarity search of correlated markets
+</ParamField>
+
+## Source Location
+
+```
+prediction_market_agent/agents/think_thoroughly_agent/deploy.py
+prediction_market_agent/agents/think_thoroughly_agent/think_thoroughly_agent.py
+```
+
+## Related
+
+- [Prophet Agent](/api/agents/prophet-agent) - PredictionProphet-based research
+- [CrewAI Documentation](https://docs.crewai.com/) - Multi-agent orchestration
+- [PineconeHandler](/api/core/pinecone) - Vector similarity search
+- [Long Term Memory](/api/core/memory) - Scenario storage and retrieval

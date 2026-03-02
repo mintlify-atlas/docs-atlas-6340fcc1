@@ -1,0 +1,319 @@
+---
+title: Configuration
+description: Configure environment variables, API keys, and blockchain access for your prediction market agents
+---
+
+## Environment file setup
+
+The project uses environment variables for configuration. Create a `.env` file in the root directory of the repository.
+
+<Steps>
+  <Step title="Create .env file">
+    In the root of the repository, create a new file named `.env`:
+
+    ```bash
+    touch .env
+    ```
+  </Step>
+
+  <Step title="Add required variables">
+    At minimum, add these two required variables:
+
+    ```bash .env
+    BET_FROM_PRIVATE_KEY=your_private_key_here
+    OPENAI_API_KEY=your_openai_api_key_here
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. It should already be in `.gitignore`.
+    </Warning>
+  </Step>
+
+  <Step title="Add optional variables">
+    Depending on which agents you want to run, you may need additional variables. The agent will inform you if any are missing when you try to run it.
+  </Step>
+</Steps>
+
+## Required variables
+
+These variables are required for basic agent functionality:
+
+<ParamField path="BET_FROM_PRIVATE_KEY" type="string" required>
+  Private key for the Ethereum wallet that will place bets on prediction markets.
+  
+  <Warning>
+    Keep this key secure! It controls access to your funds on-chain. Use a dedicated wallet for testing with small amounts.
+  </Warning>
+
+  **How to get it:**
+  - Export from MetaMask or another wallet
+  - Generate a new wallet using web3 libraries
+  - Use a test wallet for development
+</ParamField>
+
+<ParamField path="OPENAI_API_KEY" type="string" required>
+  API key for OpenAI services, used by agents that leverage GPT models for reasoning and predictions.
+
+  **How to get it:**
+  1. Sign up at [platform.openai.com](https://platform.openai.com)
+  2. Navigate to API keys section
+  3. Create a new secret key
+  4. Copy and save it securely
+</ParamField>
+
+## Optional API keys
+
+These variables enable additional functionality:
+
+### Web search and research
+
+<ParamField path="SERPER_API_KEY" type="string">
+  API key for Serper, which provides Google Search results for agent research.
+
+  **Used by:** Research agents, think thoroughly agents
+  
+  **Get it at:** [serper.dev](https://serper.dev)
+</ParamField>
+
+<ParamField path="TAVILY_API_KEY" type="string">
+  API key for Tavily, a search API optimized for AI agents and LLMs.
+
+  **Used by:** Research agents, web scraping agents
+  
+  **Get it at:** [tavily.com](https://tavily.com)
+</ParamField>
+
+### Blockchain and data
+
+<ParamField path="GRAPH_API_KEY" type="string">
+  API key for The Graph, used to query blockchain data from subgraphs.
+
+  **Used by:** Omen agents, market data fetching
+  
+  **Get it at:** [thegraph.com](https://thegraph.com)
+</ParamField>
+
+### Social media integration
+
+<ParamField path="FARCASTER_PRIVATE_KEY" type="string">
+  Private key for Farcaster account integration.
+
+  **Used by:** Social media agents
+</ParamField>
+
+<ParamField path="TWITTER_ACCESS_TOKEN" type="string">
+  Twitter OAuth access token for posting and reading tweets.
+
+  **Used by:** Social media agents
+</ParamField>
+
+<ParamField path="TWITTER_ACCESS_TOKEN_SECRET" type="string">
+  Twitter OAuth access token secret.
+
+  **Used by:** Social media agents
+</ParamField>
+
+<ParamField path="TWITTER_BEARER_TOKEN" type="string">
+  Twitter API v2 bearer token for authentication.
+
+  **Used by:** Social media agents
+</ParamField>
+
+<ParamField path="TWITTER_API_KEY" type="string">
+  Twitter API consumer key.
+
+  **Used by:** Social media agents
+</ParamField>
+
+<ParamField path="TWITTER_API_KEY_SECRET" type="string">
+  Twitter API consumer secret.
+
+  **Used by:** Social media agents
+  
+  **Get Twitter credentials at:** [developer.twitter.com](https://developer.twitter.com)
+</ParamField>
+
+### Monitoring and observability
+
+<ParamField path="LANGFUSE_SECRET_KEY" type="string">
+  Secret key for Langfuse, an LLM engineering platform for tracing and monitoring.
+
+  **Used by:** Agent monitoring, debugging
+</ParamField>
+
+<ParamField path="LANGFUSE_PUBLIC_KEY" type="string">
+  Public key for Langfuse.
+
+  **Used by:** Agent monitoring, debugging
+</ParamField>
+
+<ParamField path="LANGFUSE_HOST" type="string">
+  Langfuse host URL (defaults to cloud instance if not specified).
+
+  **Used by:** Agent monitoring, debugging
+  
+  **Get Langfuse credentials at:** [langfuse.com](https://langfuse.com)
+</ParamField>
+
+### Vector database
+
+<ParamField path="PINECONE_API_KEY" type="string">
+  API key for Pinecone vector database, used for semantic search and memory.
+
+  **Used by:** Long-term memory agents, embedding agents
+  
+  **Get it at:** [pinecone.io](https://pinecone.io)
+</ParamField>
+
+### Database
+
+<ParamField path="SQLALCHEMY_DB_URL" type="string">
+  Database connection URL for SQLAlchemy (e.g., PostgreSQL, SQLite).
+
+  **Format:** `postgresql://user:password@host:port/database`
+  
+  **Used by:** Data persistence, agent state management
+</ParamField>
+
+### Development mode
+
+<ParamField path="free_for_everyone" type="string" default="0">
+  Set to `1` to open Streamlit apps in no-auth mode for development.
+
+  ```bash
+  free_for_everyone=1
+  ```
+
+  <Note>
+    Only use this in development environments, not in production.
+  </Note>
+</ParamField>
+
+## Complete .env.example
+
+Here's the complete `.env.example` file from the repository:
+
+```bash .env.example
+OPENAI_API_KEY=
+SERPER_API_KEY=
+TAVILY_API_KEY=
+BET_FROM_PRIVATE_KEY=
+GRAPH_API_KEY=
+LANGFUSE_SECRET_KEY=
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_HOST=
+FARCASTER_PRIVATE_KEY=
+PINECONE_API_KEY=
+TWITTER_ACCESS_TOKEN=
+TWITTER_ACCESS_TOKEN_SECRET=
+TWITTER_BEARER_TOKEN=
+TWITTER_API_KEY=
+TWITTER_API_KEY_SECRET=
+SQLALCHEMY_DB_URL=
+# Opens streamlit in no-auth mode
+free_for_everyone=1
+```
+
+## Configuration by agent type
+
+Different agents require different configurations:
+
+<Tabs>
+  <Tab title="Basic agents">
+    **Required for:** `coinflip`, `knownoutcome`
+
+    ```bash
+    BET_FROM_PRIVATE_KEY=your_private_key
+    OPENAI_API_KEY=your_openai_key
+    ```
+  </Tab>
+  
+  <Tab title="Research agents">
+    **Required for:** `think_thoroughly`, `prophet_*` agents
+
+    ```bash
+    BET_FROM_PRIVATE_KEY=your_private_key
+    OPENAI_API_KEY=your_openai_key
+    TAVILY_API_KEY=your_tavily_key
+    SERPER_API_KEY=your_serper_key
+    ```
+  </Tab>
+  
+  <Tab title="Social media agents">
+    **Required for:** `social_media`
+
+    ```bash
+    BET_FROM_PRIVATE_KEY=your_private_key
+    OPENAI_API_KEY=your_openai_key
+    TWITTER_ACCESS_TOKEN=your_token
+    TWITTER_ACCESS_TOKEN_SECRET=your_secret
+    TWITTER_BEARER_TOKEN=your_bearer
+    TWITTER_API_KEY=your_api_key
+    TWITTER_API_KEY_SECRET=your_api_secret
+    FARCASTER_PRIVATE_KEY=your_farcaster_key
+    ```
+  </Tab>
+  
+  <Tab title="Advanced agents">
+    **Required for:** `microchain_*` agents with long-term memory
+
+    ```bash
+    BET_FROM_PRIVATE_KEY=your_private_key
+    OPENAI_API_KEY=your_openai_key
+    PINECONE_API_KEY=your_pinecone_key
+    SQLALCHEMY_DB_URL=postgresql://user:pass@host/db
+    LANGFUSE_SECRET_KEY=your_langfuse_secret
+    LANGFUSE_PUBLIC_KEY=your_langfuse_public
+    ```
+  </Tab>
+</Tabs>
+
+## Verifying configuration
+
+When you run an agent, it will automatically check for required environment variables:
+
+```bash
+python prediction_market_agent/run_agent.py coinflip omen
+```
+
+If any required variables are missing, you'll see an error message indicating which ones need to be set.
+
+<Note>
+  The agent will only check for variables it actually needs, so you don't need to configure everything upfront.
+</Note>
+
+## Security best practices
+
+<CardGroup cols={2}>
+  <Card title="Use test wallets" icon="flask">
+    For development, use dedicated test wallets with small amounts of funds
+  </Card>
+  <Card title="Never commit secrets" icon="lock">
+    Ensure `.env` is in `.gitignore` and never commit API keys or private keys
+  </Card>
+  <Card title="Rotate keys regularly" icon="rotate">
+    Regularly rotate API keys and private keys, especially after development
+  </Card>
+  <Card title="Use environment separation" icon="layer-group">
+    Keep separate `.env` files for development, staging, and production
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Run your first agent with the coinflip example
+  </Card>
+  <Card
+    title="Create custom agents"
+    icon="code"
+    href="/guides/creating-agents"
+  >
+    Build your own prediction market agent
+  </Card>
+</CardGroup>

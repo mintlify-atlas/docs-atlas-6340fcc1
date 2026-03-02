@@ -1,122 +1,138 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Gnosis Prediction Market Agent",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2E86AB",
+    "light": "#A7C5D9",
+    "dark": "#1A4D6F"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/gnosis/prediction-market-agent"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/gnosis/prediction-market-agent"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
+              "installation",
               "quickstart",
-              "development"
+              "configuration"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/agents",
+              "concepts/markets",
+              "concepts/betting-strategies",
+              "concepts/trade-intervals"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/creating-agents",
+              "guides/deploying-agents",
+              "guides/benchmarking",
+              "guides/hackathon"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Agent Gallery",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "agents/overview",
+              "agents/simple-agents",
+              "agents/research-agents",
+              "agents/prophet-agents",
+              "agents/microchain-agents",
+              "agents/specialized-agents"
+            ]
+          },
+          {
+            "group": "Tools & Utilities",
+            "pages": [
+              "tools/web-scraping",
+              "tools/research",
+              "tools/database"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Classes",
             "pages": [
-              "api-reference/introduction"
+              "api/deployable-agent",
+              "api/agent-market",
+              "api/probabilistic-answer"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Agent Implementations",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/agents/coinflip-agent",
+              "api/agents/advanced-agent",
+              "api/agents/prophet-agent",
+              "api/agents/microchain-agent",
+              "api/agents/think-thoroughly-agent"
+            ]
+          },
+          {
+            "group": "Markets",
+            "pages": [
+              "api/markets/omen",
+              "api/markets/manifold",
+              "api/markets/polymarket",
+              "api/markets/metaculus"
+            ]
+          },
+          {
+            "group": "Betting Strategies",
+            "pages": [
+              "api/betting/kelly-betting",
+              "api/betting/max-expected-value",
+              "api/betting/max-accuracy"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "api/tools/web-scraping",
+              "api/tools/search",
+              "api/tools/llm-utils"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Deployment",
+        "groups": [
+          {
+            "group": "Deployment Options",
+            "pages": [
+              "deployment/local",
+              "deployment/docker",
+              "deployment/cloud",
+              "deployment/environment"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

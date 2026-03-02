@@ -1,0 +1,320 @@
+---
+title: 'Web Scraping'
+description: 'Powerful web scraping utilities for extracting and processing web content'
+icon: 'globe'
+---
+
+## Overview
+
+The Gnosis Prediction Market Agent provides multiple web scraping tools for extracting content from URLs. These tools offer different levels of processing, from raw text extraction to structured summaries, making them suitable for various use cases in market research and prediction analysis.
+
+## Available Tools
+
+### Basic Web Scraping
+
+The basic web scraping tool extracts text from a URL and optionally summarizes it using GPT if the content exceeds 10,000 characters.
+
+<CodeGroup>
+```python basic_summary.py
+from prediction_market_agent.tools.web_scrape.basic_summary import web_scrape
+
+# Scrape and auto-summarize if needed
+result = web_scrape(
+    objective="Extract information about prediction markets",
+    url="https://example.com/article"
+)
+```
+</CodeGroup>
+
+<AccordionGroup>
+  <Accordion title="Implementation Details" icon="code">
+    The `web_scrape` function uses:
+    - **BeautifulSoup** for HTML parsing
+    - **LangChain's map-reduce chain** for intelligent summarization
+    - **Recursive text splitting** with 10,000 character chunks and 500 character overlap
+    - **OpenAI GPT** for generating objective-focused summaries
+
+    ```python
+    def web_scrape(objective: str, url: str) -> str:
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = bs4.BeautifulSoup(response.content, "html.parser")
+        text: str = soup.get_text()
+        if len(text) > 10000:
+            text = _summary(objective, text)
+        return text
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Markdown Web Scraping
+
+This tool converts HTML content to clean markdown format with automatic retry logic and caching.
+
+<CodeGroup>
+```python markdown.py
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+
+# Scrape and convert to markdown
+markdown_content = web_scrape(
+    url="https://example.com/page",
+    timeout=10
+)
+```
+</CodeGroup>
+
+<Note>
+  This function is cached for 1 day using `db_cache` and includes automatic retries with exponential backoff.
+</Note>
+
+<AccordionGroup>
+  <Accordion title="Key Features" icon="stars">
+    - **Automatic retry**: Up to 3 attempts with 1-second delays
+    - **Database caching**: Results cached for 24 hours
+    - **Clean extraction**: Removes scripts, styles, images, and other non-content elements
+    - **Markdown conversion**: Uses `markdownify` for clean text formatting
+    - **User-agent spoofing**: Mimics Firefox browser to avoid bot detection
+
+    ```python
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3), 
+        wait=tenacity.wait_fixed(1), 
+        reraise=True
+    )
+    def fetch_html(url: str, timeout: int) -> Response:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:107.0) Gecko/20100101 Firefox/107.0"
+        }
+        response = requests.get(url, headers=headers, timeout=timeout)
+        return response
+    ```
+  </Accordion>
+
+  <Accordion title="Content Cleaning" icon="filter">
+    The tool removes unnecessary elements:
+    - `<script>` tags
+    - `<style>` tags
+    - `<noscript>` tags
+    - `<link>` tags
+    - `<head>` sections
+    - `<image>` and `<img>` tags
+
+    Text is then converted to markdown and whitespace is normalized.
+  </Accordion>
+</AccordionGroup>
+
+### Structured Web Scraping
+
+For preserving document structure, use the structured scraping tool that maintains hierarchy and optionally summarizes the content.
+
+<CodeGroup>
+```python structured_summary.py
+from prediction_market_agent.tools.web_scrape.structured_summary import (
+    web_scrape_structured,
+    web_scrape_structured_and_summarized
+)
+
+# Get structured content
+structured = web_scrape_structured(
+    url="https://example.com",
+    remove_a_links=True
+)
+
+# Get structured and summarized content
+summary = web_scrape_structured_and_summarized(
+    objective="Analyze market trends",
+    url="https://example.com",
+    remove_a_links=True
+)
+```
+</CodeGroup>
+
+<AccordionGroup>
+  <Accordion title="Output Format" icon="list">
+    Unlike other scrapers that return plain text, this tool preserves hierarchical structure:
+
+    ```
+    A Historical look at Gnosis, GNO's price
+        GNO/USD Pair
+            GNO
+            USD
+            16 January 2021
+            106.76
+            GNO
+            USD
+            16 January 2022
+            398.11
+    ```
+
+    This format is ideal for extracting structured data like tables, lists, and nested content.
+  </Accordion>
+
+  <Accordion title="Cleaning Process" icon="broom">
+    ```python
+    def clean_soup(soup: Tag, remove_a_links: bool) -> Tag:
+        # Remove all attributes except href
+        for tag in soup.findAll(lambda x: len(x.attrs) > 0):
+            tag.attrs = {k: v for k, v in tag.attrs.items() if k == "href"}
+        
+        # Remove unwanted tags
+        tags_to_remove = ["noscript", "script", "style"]
+        if remove_a_links:
+            tags_to_remove.append("a")
+        
+        for element_name in tags_to_remove:
+            for element in soup.select(element_name):
+                element.extract()
+        
+        # Remove comments and empty elements
+        for element in soup(text=lambda text: isinstance(text, Comment)):
+            element.extract()
+        
+        for element in soup.find_all():
+            if len(element.get_text(strip=True)) == 0:
+                element.extract()
+        
+        return soup
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Usage in Agents
+
+### Advanced Agent Example
+
+The `AdvancedAgent` demonstrates real-world usage of web scraping for market predictions:
+
+<CodeGroup>
+```python advanced_agent/deploy.py
+from prediction_market_agent.tools.web_scrape.markdown import web_scrape
+from prediction_market_agent_tooling.tools.google_utils import search_google_serper
+
+class AdvancedAgent(DeployableTraderAgent):
+    def answer_binary_market(self, market: AgentMarket) -> ProbabilisticAnswer | None:
+        # Search for results on Google
+        google_results = search_google_serper(market.question)
+        
+        # Filter out Manifold results
+        google_results = [url for url in google_results if "manifold" not in url]
+        
+        if not google_results:
+            return None
+        
+        # Scrape and truncate content
+        contents = [
+            scraped[:10000]
+            for url in google_results[:5]
+            if (scraped := web_scrape(url))
+        ]
+        
+        if not contents:
+            return None
+        
+        # Use LLM to analyze and predict
+        probability, confidence = llm(market.question, contents)
+        
+        return ProbabilisticAnswer(
+            confidence=confidence,
+            p_yes=Probability(probability),
+            reasoning="I asked Google and LLM to do it!",
+        )
+```
+</CodeGroup>
+
+<Steps>
+  <Step title="Search">
+    Use Google to find relevant URLs for the market question
+  </Step>
+  <Step title="Filter">
+    Remove duplicate or low-quality sources
+  </Step>
+  <Step title="Scrape">
+    Extract content from top URLs using `web_scrape`
+  </Step>
+  <Step title="Analyze">
+    Feed scraped content to LLM for probability estimation
+  </Step>
+</Steps>
+
+## Tool Schema
+
+For microchain agents or function calling:
+
+```python
+web_scraping_schema = {
+    "type": "function",
+    "function": {
+        "name": "web_scraping",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "objective": {
+                    "type": "string",
+                    "description": "The objective that defines the content to be scraped from the website.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the website to be scraped.",
+                },
+            },
+            "required": ["query"],
+        },
+        "description": "Web scrape a URL to retrieve information relevant to the objective.",
+    },
+}
+```
+
+## Error Handling
+
+<Warning>
+  Always handle potential errors when scraping:
+  - Network timeouts
+  - HTTP errors (404, 403, etc.)
+  - Invalid HTML
+  - Rate limiting
+</Warning>
+
+<CodeGroup>
+```python exception_handling.py
+from prediction_market_agent.tools.tool_exception_handler import tool_exception_handler
+import requests
+
+# Wrap scraper with exception handler
+web_scrape_handled = tool_exception_handler(
+    map_exception_to_output={
+        requests.exceptions.HTTPError: "Couldn't reach the URL.",
+        requests.exceptions.Timeout: "Request timed out.",
+    }
+)(web_scrape_structured)
+
+# Now safe to use without try/except
+result = web_scrape_handled(url="https://example.com")
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Caching" icon="database">
+    The markdown scraper includes built-in caching. For custom scrapers, use `@db_cache` decorator to avoid redundant requests.
+  </Card>
+  <Card title="Set Timeouts" icon="clock">
+    Always specify timeouts to prevent hanging requests. Default is 10 seconds.
+  </Card>
+  <Card title="Handle Failures" icon="shield">
+    Use the `tool_exception_handler` for graceful error handling in production agents.
+  </Card>
+  <Card title="Respect Limits" icon="hand">
+    Implement rate limiting and respect robots.txt when scraping multiple pages.
+  </Card>
+</CardGroup>
+
+## Dependencies
+
+```bash
+pip install beautifulsoup4 requests markdownify langchain langchain-openai tenacity
+```
+
+<Tip>
+  All web scraping tools require valid API keys. Set `OPENAI_API_KEY` in your environment for summarization features.
+</Tip>

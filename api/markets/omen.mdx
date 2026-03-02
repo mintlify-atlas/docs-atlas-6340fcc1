@@ -1,0 +1,374 @@
+---
+title: 'Omen Market API'
+description: 'API reference for Omen/Presagio prediction market integration'
+---
+
+## Overview
+
+Omen (also known as Presagio) is a decentralized prediction market platform on Gnosis Chain. The Omen market API provides access to binary and categorical prediction markets with full on-chain trading capabilities.
+
+## MarketType Enum
+
+```python
+from prediction_market_agent_tooling.markets.markets import MarketType
+
+market_type = MarketType.OMEN
+```
+
+## Market Class
+
+### OmenAgentMarket
+
+The `OmenAgentMarket` class extends `AgentMarket` and provides Omen-specific functionality.
+
+```python
+from prediction_market_agent_tooling.markets.omen.omen import OmenAgentMarket
+```
+
+## Core Methods
+
+### Get Markets
+
+Retrieve available prediction markets from Omen.
+
+```python
+markets = OmenAgentMarket.get_markets(
+    limit=15,
+    filter_by=FilterBy.OPEN,
+    sort_by=SortBy.CLOSING_SOONEST
+)
+```
+
+<ParamField path="limit" type="int">
+  Maximum number of markets to retrieve
+</ParamField>
+
+<ParamField path="filter_by" type="FilterBy">
+  Filter markets by status (OPEN, RESOLVED, etc.)
+</ParamField>
+
+<ParamField path="sort_by" type="SortBy">
+  Sort order (CLOSING_SOONEST, NEWEST, HIGHEST_LIQUIDITY, etc.)
+</ParamField>
+
+<ResponseField name="markets" type="list[OmenAgentMarket]">
+  List of market objects matching the query criteria
+</ResponseField>
+
+### Get Binary Market
+
+Retrieve a specific binary market by ID.
+
+```python
+market = OmenAgentMarket.get_binary_market(
+    id="0x0020d13c89140b47e10db54cbd53852b90bc1391"
+)
+```
+
+<ParamField path="id" type="str" required>
+  Market address (checksummed Ethereum address)
+</ParamField>
+
+<ResponseField name="market" type="OmenAgentMarket">
+  Market object containing question, probabilities, and trading information
+</ResponseField>
+
+### Buy Tokens
+
+Purchase outcome tokens for a market.
+
+```python
+market.buy_tokens(
+    outcome="Yes",
+    amount=USD(2.5)
+)
+```
+
+<ParamField path="outcome" type="str" required>
+  Outcome to bet on ("Yes" or "No" for binary markets)
+</ParamField>
+
+<ParamField path="amount" type="USD" required>
+  Amount to spend on tokens in USD
+</ParamField>
+
+### Sell Tokens
+
+Sell outcome tokens from a market position.
+
+```python
+market.sell_tokens(
+    outcome="Yes",
+    amount=OutcomeToken(5.0)
+)
+```
+
+<ParamField path="outcome" type="str" required>
+  Outcome tokens to sell
+</ParamField>
+
+<ParamField path="amount" type="OutcomeToken" required>
+  Number of outcome tokens to sell
+</ParamField>
+
+### Get Token Balance
+
+Check token balance for a specific outcome.
+
+```python
+balance = market.get_token_balance(
+    user_id=api_keys.bet_from_address,
+    outcome="Yes"
+)
+```
+
+<ParamField path="user_id" type="str" required>
+  User's Ethereum address
+</ParamField>
+
+<ParamField path="outcome" type="str" required>
+  Outcome to check balance for
+</ParamField>
+
+<ResponseField name="balance" type="OutcomeToken">
+  Number of outcome tokens held
+</ResponseField>
+
+### Get Positions
+
+Retrieve all user positions across markets.
+
+```python
+positions = OmenAgentMarket.get_positions(
+    user_id=api_keys.bet_from_address,
+    liquid_only=True,
+    larger_than=OutcomeToken(1e-4)
+)
+```
+
+<ParamField path="user_id" type="str" required>
+  User's Ethereum address
+</ParamField>
+
+<ParamField path="liquid_only" type="bool">
+  Only return positions in open markets
+</ParamField>
+
+<ParamField path="larger_than" type="OutcomeToken">
+  Minimum position size to include
+</ParamField>
+
+<ResponseField name="positions" type="list[Position]">
+  List of user positions with market details and token amounts
+</ResponseField>
+
+### Get Trade Balance
+
+Get available trading balance.
+
+```python
+balance = OmenAgentMarket.get_trade_balance(api_keys)
+```
+
+<ParamField path="api_keys" type="APIKeys" required>
+  API keys containing wallet address
+</ParamField>
+
+<ResponseField name="balance" type="USD">
+  Available balance for trading in USD
+</ResponseField>
+
+## Market Data Model
+
+### Market Properties
+
+<ResponseField name="id" type="str">
+  Market address (Ethereum checksummed address)
+</ResponseField>
+
+<ResponseField name="question" type="str">
+  Market question text
+</ResponseField>
+
+<ResponseField name="description" type="str | None">
+  Additional market description or resolution criteria
+</ResponseField>
+
+<ResponseField name="outcomes" type="list[str]">
+  Available outcomes (e.g., ["Yes", "No"] for binary markets)
+</ResponseField>
+
+<ResponseField name="p_yes" type="Probability">
+  Current probability of "Yes" outcome (0.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="current_p_yes" type="Probability">
+  Alias for p_yes
+</ResponseField>
+
+<ResponseField name="current_p_no" type="Probability">
+  Current probability of "No" outcome (1 - p_yes)
+</ResponseField>
+
+<ResponseField name="volume" type="USD | None">
+  Total trading volume
+</ResponseField>
+
+<ResponseField name="close_time" type="DatetimeUTC | None">
+  When the market closes for trading
+</ResponseField>
+
+<ResponseField name="created_time" type="DatetimeUTC | None">
+  When the market was created
+</ResponseField>
+
+<ResponseField name="url" type="str">
+  Direct link to the market on Omen
+</ResponseField>
+
+<ResponseField name="is_open" type="bool">
+  Whether the market is currently open for trading
+</ResponseField>
+
+<ResponseField name="resolution" type="str | None">
+  Final resolution outcome (if resolved)
+</ResponseField>
+
+## Omen-Specific Features
+
+### Market Creation
+
+Create new prediction markets on Omen.
+
+```python
+from prediction_market_agent_tooling.markets.omen.omen import omen_create_market_tx
+from prediction_market_agent_tooling.markets.omen.data_models import (
+    OMEN_TRUE_OUTCOME,
+    OMEN_FALSE_OUTCOME,
+)
+
+created_market = omen_create_market_tx(
+    api_keys=api_keys,
+    initial_funds=USD(10),
+    fee_perc=0.02,
+    question="Will Bitcoin reach $100k by end of 2025?",
+    closing_time=datetime(2025, 12, 31),
+    category="Cryptocurrency",
+    language="en",
+    outcomes=[OMEN_TRUE_OUTCOME, OMEN_FALSE_OUTCOME],
+    auto_deposit=True,
+    collateral_token_address=collateral_token
+)
+```
+
+### Outcomes Constants
+
+```python
+from prediction_market_agent_tooling.markets.omen.data_models import (
+    OMEN_TRUE_OUTCOME,  # "Yes"
+    OMEN_FALSE_OUTCOME,  # "No"
+)
+```
+
+### Subgraph Handler
+
+Access raw Omen market data via GraphQL.
+
+```python
+from prediction_market_agent_tooling.markets.omen.omen_subgraph_handler import (
+    OmenSubgraphHandler,
+)
+
+handler = OmenSubgraphHandler()
+markets = handler.get_omen_markets(
+    limit=100,
+    creator=creator_address,
+    resolved=False
+)
+```
+
+## Real-World Examples
+
+### Arbitrage Agent
+
+The arbitrage agent finds correlated markets and places mirror bets.
+
+```python
+from prediction_market_agent.agents.arbitrage_agent.deploy import (
+    DeployableArbitrageAgent,
+)
+
+class DeployableArbitrageAgent(DeployableTraderAgent):
+    total_trade_amount = USD(0.1)
+    bet_on_n_markets_per_run = 5
+
+    def run(self, market_type: MarketType) -> None:
+        if market_type != MarketType.OMEN:
+            raise RuntimeError("Can arbitrage only on Omen")
+        super().run(market_type=market_type)
+```
+
+### Microchain Agent
+
+The microchain agent uses function calling to trade on Omen markets.
+
+```python
+from prediction_market_agent.agents.microchain_agent.market_functions import (
+    GetMarkets,
+    BuyYes,
+    BuyNo,
+    GetBalance,
+)
+
+# Get available markets
+get_markets = GetMarkets(market_type=MarketType.OMEN, keys=api_keys)
+markets = get_markets()
+
+# Buy tokens
+buy_yes = BuyYes(market_type=MarketType.OMEN, keys=api_keys)
+result = buy_yes(market_id=market_id, amount_usd=2.5)
+```
+
+### Replication Agent
+
+The replication agent copies markets from other platforms to Omen.
+
+```python
+from prediction_market_agent.agents.replicate_to_omen_agent.omen_replicate import (
+    omen_replicate_from_tx,
+)
+
+created_addresses = omen_replicate_from_tx(
+    api_keys=api_keys,
+    market_type=MarketType.POLYMARKET,
+    n_to_replicate=5,
+    initial_funds=USD(10),
+    collateral_token_address=collateral_token,
+    replicated_market_table_handler=handler,
+    auto_deposit=True
+)
+```
+
+## Network Details
+
+- **Blockchain**: Gnosis Chain (formerly xDai)
+- **Native Token**: xDai (stablecoin pegged to USD)
+- **Collateral Tokens**: xDai, sDAI, and other ERC-20 tokens
+- **Website**: https://omen.eth.limo
+- **Subgraph**: Omen uses The Graph protocol for market data
+
+## Error Handling
+
+```python
+try:
+    market = OmenAgentMarket.get_binary_market(id=market_id)
+    market.buy_tokens(outcome="Yes", amount=USD(5))
+except Exception as e:
+    logger.error(f"Failed to execute trade: {e}")
+```
+
+## See Also
+
+- [Manifold Market API](/api/markets/manifold)
+- [Polymarket Market API](/api/markets/polymarket)
+- [Metaculus Market API](/api/markets/metaculus)
